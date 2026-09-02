@@ -18,11 +18,7 @@ describe('JwtAuthGuard', () => {
     configService = {
       getOrThrow: jest.fn().mockReturnValue('access-secret'),
     };
-    guard = new JwtAuthGuard(
-      reflector,
-      jwtService as unknown as JwtService,
-      configService as unknown as ConfigService,
-    );
+    guard = new JwtAuthGuard(reflector, jwtService as unknown as JwtService, configService as unknown as ConfigService);
   });
 
   const createContext = (authorization?: string) => {
@@ -40,17 +36,13 @@ describe('JwtAuthGuard', () => {
   };
 
   it('allows public routes without a token', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
-      key === IS_PUBLIC_KEY ? true : undefined,
-    );
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => (key === IS_PUBLIC_KEY ? true : undefined));
     await expect(guard.canActivate(createContext())).resolves.toBe(true);
   });
 
   it('rejects missing bearer token', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
-    await expect(guard.canActivate(createContext())).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(createContext())).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('attaches user from a valid access token', async () => {

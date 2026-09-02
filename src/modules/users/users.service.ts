@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import * as argon2 from 'argon2';
@@ -9,7 +9,7 @@ import { UserResponseDto } from './dto/user-response.dto';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { assertObjectId } from '../../shared/utils/assert-object-id/assert-object-id.util';
+import { checkMongoId } from '../../shared/utils/check-mongo-id/check-mongo-id.util';
 
 @Injectable()
 export class UsersService {
@@ -36,6 +36,8 @@ export class UsersService {
         [
           {
             username: dto.username,
+            firstName: dto.firstName.trim(),
+            lastName: dto.lastName.trim(),
             passwordHash,
             role: UserRole.ADMIN,
             isActive: true,
@@ -53,6 +55,8 @@ export class UsersService {
           entityId: created._id.toString(),
           changes: {
             username: { old: null, new: created.username },
+            firstName: { old: null, new: created.firstName },
+            lastName: { old: null, new: created.lastName },
             role: { old: null, new: created.role },
             isActive: { old: null, new: true },
           },
@@ -79,7 +83,7 @@ export class UsersService {
   }
 
   public async findMe(userId: string): Promise<UserResponseDto> {
-    assertObjectId(userId);
+    checkMongoId(userId);
     const user = await this.userModel.findOne({ _id: userId, isDeleted: false }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
@@ -87,16 +91,84 @@ export class UsersService {
     return this.toUserResponseDto(user);
   }
 
-  public async updateActiveStatus(id: string, dto: UpdateUserDto): Promise<UserResponseDto> {
-    assertObjectId(id);
-
+  public async updateUser(id: string, dto: UpdateUserDto, actor: AuthUser): Promise<UserResponseDto> {
     const user = await this.userModel.findOne({ _id: id, isDeleted: false }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    if (user.role === UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('Cannot modify super admin');
+    }
 
-    user.isActive = dto.isActive;
+    if (dto.username && dto.username !== user.username) {
+      const existing = await this.userModel
+        .findOne({ username: dto.username, isDeleted: false, _id: { $ne: user._id } })
+        .lean()
+        .exec();
+      if (existing) {
+        throw new ConflictException('Username already exists');
+      }
+      user.username = dto.username.trim();
+    }
+
+    if (dto.firstName !== undefined) {
+      user.firstName = dto.firstName.trim();
+    }
+    if (dto.lastName !== undefined) {
+      user.lastName = dto.lastName.trim();
+    }
+    if (dto.isActive !== undefined) {
+      user.isActive = dto.isActive;
+    }
+    if (dto.password) {
+      user.passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+    }
+
     await user.save();
+
+    await this.auditService.log({
+      userId: actor.id,
+      action: 'admin_updated',
+      entityType: 'User',
+      entityId: user._id.toString(),
+      changes: {},
+      refCollection: null,
+      refId: null,
+      summary: `Admin updated: ${user.username}`,
+    });
+
+    return this.toUserResponseDto(user);
+  }
+
+  public async softDelete(id: string, actor: AuthUser): Promise<UserResponseDto> {
+    const user = await this.userModel.findOne({ _id: id, isDeleted: false }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role === UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('Cannot delete super admin');
+    }
+    if (user._id.toString() === actor.id) {
+      throw new ForbiddenException('Cannot delete your own account');
+    }
+
+    user.isDeleted = true;
+    user.isActive = false;
+    await user.save();
+
+    await this.auditService.log({
+      userId: actor.id,
+      action: 'admin_deleted',
+      entityType: 'User',
+      entityId: user._id.toString(),
+      changes: {
+        isDeleted: { old: false, new: true },
+      },
+      refCollection: null,
+      refId: null,
+      summary: `Admin deleted: ${user.username}`,
+    });
+
     return this.toUserResponseDto(user);
   }
 
@@ -115,6 +187,8 @@ export class UsersService {
     return {
       id: user._id.toString(),
       username: user.username,
+      firstName: user.firstName ?? '',
+      lastName: user.lastName ?? '',
       role: user.role,
       isActive: user.isActive,
       isDeleted: user.isDeleted,

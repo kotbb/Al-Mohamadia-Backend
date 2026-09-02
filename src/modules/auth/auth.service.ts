@@ -24,6 +24,7 @@ export class AuthService {
     private readonly refreshTokenModel: Model<RefreshTokenDocument>,
   ) {}
 
+  // Login
   public async login(dto: LoginDto): Promise<AuthTokensResponseDto> {
     const user = await this.usersService.findByUsernameForAuth(dto.username);
     if (!user) {
@@ -42,6 +43,7 @@ export class AuthService {
     return this.issueTokenPair(user._id.toString(), this.usersService.toUserResponseDto(user));
   }
 
+  // Refresh
   public async refresh(rawRefreshToken: string): Promise<AuthTokensResponseDto> {
     const tokenHash = this.hashToken(rawRefreshToken);
     const stored = await this.refreshTokenModel.findOne({ tokenHash }).exec();
@@ -63,6 +65,7 @@ export class AuthService {
     return this.issueTokenPair(user._id.toString(), this.usersService.toUserResponseDto(user));
   }
 
+  // Logout
   public async logout(refreshToken: string): Promise<LogoutResponseDto> {
     const tokenHash = this.hashToken(refreshToken);
     await this.refreshTokenModel.deleteOne({ tokenHash }).exec();

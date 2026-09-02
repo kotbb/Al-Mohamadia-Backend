@@ -6,7 +6,7 @@ import { Types } from 'mongoose';
  * @param id - The id to check.
  * @param field - The field name to use in the error message. Defaults to 'id'.
  */
-export function assertObjectId(id: string, field = 'id'): asserts id is string {
+export function checkMongoId(id: string, field = 'id'): asserts id is string {
   if (!Types.ObjectId.isValid(id)) {
     throw new BadRequestException(`Invalid ${field}: '${id}'`);
   }

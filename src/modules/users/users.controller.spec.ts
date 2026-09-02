@@ -10,7 +10,8 @@ describe('UsersController', () => {
     createAdmin: jest.Mock;
     findAll: jest.Mock;
     findMe: jest.Mock;
-    updateActiveStatus: jest.Mock;
+    updateUser: jest.Mock;
+    softDelete: jest.Mock;
   };
 
   const actor: AuthUser = {
@@ -24,7 +25,8 @@ describe('UsersController', () => {
       createAdmin: jest.fn().mockResolvedValue({ id: '1' }),
       findAll: jest.fn().mockResolvedValue([]),
       findMe: jest.fn().mockResolvedValue({ id: actor.id }),
-      updateActiveStatus: jest.fn().mockResolvedValue({ id: '1', isActive: false }),
+      updateUser: jest.fn().mockResolvedValue({ id: '1', isActive: false }),
+      softDelete: jest.fn().mockResolvedValue({ id: '1', isDeleted: true }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -40,7 +42,12 @@ describe('UsersController', () => {
   });
 
   it('delegates create to UsersService.createAdmin', async () => {
-    const dto = { username: 'admin1', password: 'password123' };
+    const dto = {
+      username: 'admin1',
+      firstName: 'Admin',
+      lastName: 'One',
+      password: 'password123',
+    };
     await controller.create(dto, actor);
     expect(usersService.createAdmin).toHaveBeenCalledWith(dto, actor);
   });
@@ -55,11 +62,17 @@ describe('UsersController', () => {
     expect(usersService.findMe).toHaveBeenCalledWith(actor.id);
   });
 
-  it('delegates update to UsersService.updateActiveStatus', async () => {
-    await controller.update('507f1f77bcf86cd799439011', { isActive: false });
-    expect(usersService.updateActiveStatus).toHaveBeenCalledWith(
+  it('delegates update to UsersService.updateUser', async () => {
+    await controller.update('507f1f77bcf86cd799439011', { isActive: false }, actor);
+    expect(usersService.updateUser).toHaveBeenCalledWith(
       '507f1f77bcf86cd799439011',
       { isActive: false },
+      actor,
     );
+  });
+
+  it('delegates remove to UsersService.softDelete', async () => {
+    await controller.remove('507f1f77bcf86cd799439011', actor);
+    expect(usersService.softDelete).toHaveBeenCalledWith('507f1f77bcf86cd799439011', actor);
   });
 });

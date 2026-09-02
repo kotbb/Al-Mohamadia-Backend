@@ -1,9 +1,9 @@
 import { PipeTransform } from '@nestjs/common';
-import { assertObjectId } from '../../utils/assert-object-id/assert-object-id.util';
+import { checkMongoId } from '../../utils/check-mongo-id/check-mongo-id.util';
 
 export class ParseObjectIdPipe implements PipeTransform<string, string> {
   transform(value: string): string {
-    assertObjectId(value);
+    checkMongoId(value);
     return value;
   }
 }

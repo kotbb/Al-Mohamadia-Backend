@@ -7,6 +7,9 @@ import { AppExceptionsHandler } from './shared/filters/app-exception.filter';
 import { HealthModule } from './modules/health/health.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { ItemsModule } from './modules/items/items.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import * as Joi from 'joi';
 
 @Module({
@@ -37,6 +40,9 @@ import * as Joi from 'joi';
     HealthModule,
     UsersModule,
     AuthModule,
+    CategoriesModule,
+    ItemsModule,
+    SettingsModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: AppExceptionsHandler }],
 })

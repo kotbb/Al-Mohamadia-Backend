@@ -13,9 +13,7 @@ import { RolesGuard } from '../../shared/auth/guards/roles/roles.guard';
 @Module({
   imports: [
     UsersModule,
-    MongooseModule.forFeature([
-      { name: RefreshToken.name, schema: RefreshTokenSchema },
-    ]),
+    MongooseModule.forFeature([{ name: RefreshToken.name, schema: RefreshTokenSchema }]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -23,10 +21,7 @@ import { RolesGuard } from '../../shared/auth/guards/roles/roles.guard';
         secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
         signOptions: {
           expiresIn: configService.getOrThrow<string>('JWT_ACCESS_EXPIRES_IN') as
-            | `${number}s`
-            | `${number}m`
-            | `${number}h`
-            | `${number}d`,
+            `${number}s` | `${number}m` | `${number}h` | `${number}d`,
         },
       }),
     }),

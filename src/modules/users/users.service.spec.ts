@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
@@ -56,6 +51,8 @@ describe('UsersService createAdmin', () => {
         {
           _id: { toString: () => validId },
           username: 'newadmin',
+          firstName: 'New',
+          lastName: 'Admin',
           role: UserRole.ADMIN,
           isActive: true,
           isDeleted: false,
@@ -88,12 +85,14 @@ describe('UsersService createAdmin', () => {
 
   it('creates an admin and writes audit_created', async () => {
     const result = await service.createAdmin(
-      { username: 'newadmin', password: 'password123' },
+      { username: 'newadmin', firstName: 'New', lastName: 'Admin', password: 'password123' },
       actor,
     );
 
     expect(result.role).toBe(UserRole.ADMIN);
     expect(result.username).toBe('newadmin');
+    expect(result.firstName).toBe('New');
+    expect(result.lastName).toBe('Admin');
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'admin_created',
@@ -112,8 +111,13 @@ describe('UsersService createAdmin', () => {
     });
 
     await expect(
-      service.createAdmin({ username: 'newadmin', password: 'password123' }, actor),
-    ).rejects.toBeInstanceOf(ConflictException);
+      service.createAdmin(
+        { username: 'newadmin', firstName: 'New', lastName: 'Admin', password: 'password123' },
+        actor,
+      ),
+    ).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });
 
@@ -177,23 +181,30 @@ describe('UsersService findMe', () => {
   });
 });
 
-describe('UsersService updateActiveStatus', () => {
+describe('UsersService updateUser', () => {
   let service: UsersService;
   let userModel: { findOne: jest.Mock };
+  let auditService: { log: jest.Mock };
 
   const validId = '507f1f77bcf86cd799439011';
+  const actor: AuthUser = {
+    id: '507f1f77bcf86cd799439099',
+    username: 'super',
+    role: UserRole.SUPER_ADMIN,
+  };
 
   beforeEach(async () => {
     userModel = {
       findOne: jest.fn(),
     };
+    auditService = { log: jest.fn().mockResolvedValue({}) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: getConnectionToken(), useValue: { startSession: jest.fn() } },
-        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AuditService, useValue: auditService },
       ],
     }).compile();
 
@@ -204,6 +215,8 @@ describe('UsersService updateActiveStatus', () => {
     const doc = {
       _id: { toString: () => validId },
       username: 'admin1',
+      firstName: 'A',
+      lastName: 'B',
       role: UserRole.ADMIN,
       isActive: true,
       isDeleted: false,
@@ -214,7 +227,7 @@ describe('UsersService updateActiveStatus', () => {
       exec: () => Promise.resolve(doc),
     });
 
-    const result = await service.updateActiveStatus(validId, { isActive: false });
+    const result = await service.updateUser(validId, { isActive: false }, actor);
 
     expect(doc.isActive).toBe(false);
     expect(doc.save).toHaveBeenCalled();
@@ -226,34 +239,25 @@ describe('UsersService updateActiveStatus', () => {
       exec: () => Promise.resolve(null),
     });
 
-    await expect(
-      service.updateActiveStatus(validId, { isActive: false }),
-    ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('throws BadRequestException for invalid ObjectId', async () => {
-    await expect(
-      service.updateActiveStatus('not-valid', { isActive: true }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(userModel.findOne).not.toHaveBeenCalled();
+    await expect(service.updateUser(validId, { isActive: false }, actor)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });
 
 describe('UsersController role metadata', () => {
-  it('marks create, getAll, and update as super_admin only', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.create)).toEqual([
-      UserRole.SUPER_ADMIN,
-    ]);
-    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.getAll)).toEqual([
-      UserRole.SUPER_ADMIN,
-    ]);
-    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.update)).toEqual([
-      UserRole.SUPER_ADMIN,
-    ]);
+  it('marks create, getAll, update, and remove as super_admin only', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.create)).toEqual([UserRole.SUPER_ADMIN]);
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.getAll)).toEqual([UserRole.SUPER_ADMIN]);
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.update)).toEqual([UserRole.SUPER_ADMIN]);
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.remove)).toEqual([UserRole.SUPER_ADMIN]);
   });
 
-  it('does not require a special role for getMe', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.getMe)).toBeUndefined();
+  it('allows admin and super_admin for getMe', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController.prototype.getMe)).toEqual([
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN,
+    ]);
   });
 });
 

@@ -28,29 +28,23 @@ describe('RolesGuard', () => {
   });
 
   it('allows matching role', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
-      key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined,
-    );
-    expect(
-      guard.canActivate(createContext({ role: UserRole.SUPER_ADMIN })),
-    ).toBe(true);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key) => (key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined));
+    expect(guard.canActivate(createContext({ role: UserRole.SUPER_ADMIN }))).toBe(true);
   });
 
   it('forbids admin on super_admin-only routes', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
-      key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined,
-    );
-    expect(() =>
-      guard.canActivate(createContext({ role: UserRole.ADMIN })),
-    ).toThrow(ForbiddenException);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key) => (key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined));
+    expect(() => guard.canActivate(createContext({ role: UserRole.ADMIN }))).toThrow(ForbiddenException);
   });
 
   it('unauthorized when user missing but roles required', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
-      key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined,
-    );
-    expect(() => guard.canActivate(createContext())).toThrow(
-      UnauthorizedException,
-    );
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key) => (key === ROLES_KEY ? [UserRole.SUPER_ADMIN] : undefined));
+    expect(() => guard.canActivate(createContext())).toThrow(UnauthorizedException);
   });
 });

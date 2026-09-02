@@ -9,9 +9,7 @@ import * as argon2 from 'argon2';
 
 describe('AuthService', () => {
   let authService: AuthService;
-  let usersService: jest.Mocked<
-    Pick<UsersService, 'findByUsernameForAuth' | 'findByIdForAuth' | 'toUserResponseDto'>
-  >;
+  let usersService: jest.Mocked<Pick<UsersService, 'findByUsernameForAuth' | 'findByIdForAuth' | 'toUserResponseDto'>>;
   let jwtService: jest.Mocked<Pick<JwtService, 'signAsync'>>;
   let configService: jest.Mocked<Pick<ConfigService, 'getOrThrow'>>;
   let refreshTokenModel: {
@@ -90,9 +88,9 @@ describe('AuthService', () => {
     it('rejects unknown usernames', async () => {
       usersService.findByUsernameForAuth.mockResolvedValue(null);
 
-      await expect(
-        authService.login({ username: 'nobody', password: 'password123' }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(authService.login({ username: 'nobody', password: 'password123' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
 
     it('rejects invalid password', async () => {
@@ -103,9 +101,9 @@ describe('AuthService', () => {
         isActive: true,
       } as never);
 
-      await expect(
-        authService.login({ username: 'admin1', password: 'wrong' }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(authService.login({ username: 'admin1', password: 'wrong' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
 
     it('rejects inactive users', async () => {
@@ -116,9 +114,9 @@ describe('AuthService', () => {
         isActive: false,
       } as never);
 
-      await expect(
-        authService.login({ username: 'admin1', password: 'password123' }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(authService.login({ username: 'admin1', password: 'password123' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -158,9 +156,7 @@ describe('AuthService', () => {
         exec: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(authService.refresh('missing')).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(authService.refresh('missing')).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('rejects inactive refresh tokens and deletes them', async () => {
@@ -176,9 +172,7 @@ describe('AuthService', () => {
         exec: jest.fn().mockResolvedValue(stored),
       });
 
-      await expect(authService.refresh('expired-token')).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(authService.refresh('expired-token')).rejects.toBeInstanceOf(UnauthorizedException);
       expect(refreshTokenModel.deleteOne).toHaveBeenCalledWith({ _id: 'rt-expired' });
       expect(refreshTokenModel.create).not.toHaveBeenCalled();
     });

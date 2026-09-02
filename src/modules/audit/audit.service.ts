@@ -11,6 +11,7 @@ export class AuditService {
     private readonly auditLogModel: Model<AuditLogDocument>,
   ) {}
 
+  // Log Audit
   public async log(dto: CreateAuditLogDto, session?: ClientSession): Promise<AuditLog> {
     const doc = new this.auditLogModel(dto);
     return doc.save({ session });
