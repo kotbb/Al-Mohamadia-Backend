@@ -133,7 +133,7 @@ describe('CategoriesService', () => {
       expect(mockCategory.save).toHaveBeenCalledWith({ session });
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'category_edited',
+          action: 'category_deleted',
           changes: expect.objectContaining({
             isDeleted: { old: false, new: true },
           }),

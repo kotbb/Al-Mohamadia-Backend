@@ -250,7 +250,7 @@ export class ItemsService {
       await this.auditService.log(
         {
           userId: user.id,
-          action: 'item_edited',
+          action: 'item_deleted',
           entityType: 'Item',
           entityId: item._id.toString(),
           changes: {

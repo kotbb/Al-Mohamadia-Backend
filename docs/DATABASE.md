@@ -28,15 +28,20 @@ schema changes.
 | Field | Type | Notes |
 |---|---|---|
 | name | string | required |
-| phone | string | required, used for search |
-| balance | number | denormalized running debt (مديونية), default 0 |
-| isActive | boolean | deactivation flag |
-| isDeleted | boolean | soft delete |
+| phone | string | required, used for search; normalized (trim + strip spaces/dashes) |
+| address | string \| null | optional; trimmed; empty string stored as null |
+| balance | number | denormalized running debt (مديونية), default 0; settable **only on create** as opening balance (≥ 0); never accepted on PATCH |
+| isActive | boolean | deactivation flag (allowed even when balance ≠ 0) |
+| isDeleted | boolean | soft delete; blocked when `balance !== 0` |
 | createdAt / updatedAt | date | |
 
 **Relationships:** 1 → many `SalesInvoice`, 1 → many `Payment`.
-**Indexes:** unique-ish index on `phone` (scoped to non-deleted docs), text
+**Indexes:** unique index on `phone` (scoped to non-deleted docs), compound
 index on `name` + `phone` for search, index on `balance` for sort/filter.
+**Merge:** `POST /customers/merge` keeps `targetId`, sums `balance` from
+one or more `sourceIds`, optional name/phone overrides on target, soft-deletes
+all sources; audits `customer_merged`. Phase 4+ will re-point invoices/payments
+in the same transaction.
 
 ---
 
@@ -44,14 +49,19 @@ index on `name` + `phone` for search, index on `balance` for sort/filter.
 
 | Field | Type | Notes |
 |---|---|---|
-| name | string | |
-| phone | string | |
-| amountOwed | number | denormalized running total, default 0 |
-| isActive | boolean | |
-| isDeleted | boolean | |
+| name | string | required |
+| phone | string \| null | optional; when set, unique among non-deleted; normalized like customer phone |
+| address | string \| null | optional; trimmed; empty string stored as null |
+| amountOwed | number | denormalized running total, default 0; settable **only on create** (≥ 0); never accepted on PATCH |
+| isActive | boolean | deactivation allowed even when amountOwed ≠ 0 |
+| isDeleted | boolean | soft delete; blocked when `amountOwed !== 0` |
 | createdAt / updatedAt | date | |
 
 **Relationships:** 1 → many `PurchaseInvoice`.
+**Indexes:** partial unique on `phone` where non-deleted and phone is a
+string; index on `amountOwed`; compound `name` + `phone`.
+**Merge:** same multi-source rules as customers via `POST /suppliers/merge`
+(`supplier_merged` with `sourceIds`). Phase 6+ will re-point purchase invoices.
 
 ---
 
@@ -306,10 +316,10 @@ truth for each kind of change.
 | Field | Type | Notes |
 |---|---|---|
 | userId | ObjectId → User | |
-| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `stock_adjusted`, `purchase_created`, `price_changed`, `category_created`, `category_edited`, `item_created`, `item_edited`, `setting_changed`, `customer_created`, `customer_edited`, `customer_merged`, `supplier_created`, `supplier_edited`, `admin_created` |
+| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `stock_adjusted`, `purchase_created`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `setting_changed`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created` |
 | entityType | string | e.g. `SalesInvoice`, `Payment`, `Item`, `Category`, `Setting`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
 | entityId | ObjectId | polymorphic reference to the affected record |
-| changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff, used only for actions **without** a dedicated history collection (`item_edited`, `customer_edited`, `supplier_edited`, `customer_merged`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once (e.g. a customer's `name` and `phone` edited in the same save) |
+| changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff, used only for actions **without** a dedicated history collection (`item_edited`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once (e.g. a customer's `name` and `phone` edited in the same save) |
 | refCollection | string \| null | *(added)* set for actions **with** a dedicated history collection, e.g. `"ItemPriceHistory"` or `"StockAdjustment"` |
 | refId | ObjectId \| null | *(added)* points to the specific document in `refCollection` that holds the actual old/new values |
 | summary | string \| null | *(added)* optional precomputed human-readable one-liner (e.g. `"unitPrice: 120 → 135 ج.م"`) so the audit log list view can render something useful without joining to `refCollection`/`refId` on every row |
@@ -318,6 +328,7 @@ truth for each kind of change.
 **Rule of thumb when writing an entry:**
 - `price_changed` → set `refCollection: "ItemPriceHistory"` + `refId`, leave `changes` null.
 - `stock_adjusted` → set `refCollection: "StockAdjustment"` + `refId`, leave `changes` null.
+- soft-delete → action `*_deleted` (not `*_edited`) with `isDeleted` / `isActive` in `changes`.
 - everything else → set `changes` with the per-field diff, leave `refCollection`/`refId` null.
 
 Never updated or deleted; no edit/delete endpoints exist for this

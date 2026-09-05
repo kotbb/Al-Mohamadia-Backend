@@ -10,6 +10,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { ItemsModule } from './modules/items/items.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import * as Joi from 'joi';
 
 @Module({
@@ -40,6 +42,8 @@ import * as Joi from 'joi';
     HealthModule,
     UsersModule,
     AuthModule,
+    CustomersModule,
+    SuppliersModule,
     CategoriesModule,
     ItemsModule,
     SettingsModule,

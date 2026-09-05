@@ -72,7 +72,8 @@ UI or API routes.
 
 **Frontend** — *Done*
 
-- [x] Items list grouped by category, search/filters, base reference price card
+- [x] Items list grouped by category, search/filters
+- [x] Categories list page (create/edit modal, activate/deactivate/delete; delete blocked when items exist)
 - [x] Add/edit item **modal** (pricing mode toggle; auto-generated editable code)
 - [x] Price history **modal** per item
 - [x] Soft-delete item with confirmation (row actions kebab menu)
@@ -95,19 +96,39 @@ Modules: `src/modules/categories`, `items`, `settings`.
 
 ## Phase 3 — Customers & Suppliers
 
-**Backend**
-- `Customer`, `Supplier` schemas/modules
-- CRUD, search by name/phone
-- Merge-duplicate-customers endpoint (`دمج أسماء مكررة`)
+**Backend** — *Done*
 
-**Frontend**
-- Customers list (sorted by balance, filter "has debt"), total debt at top
-- Suppliers list, total owed at top
-- Add/edit forms for both, merge-customers UI
-- View/expand individual customer/supplier record
+- [x] `Customer`, `Supplier` schemas/modules
+- [x] CRUD, search by name/phone, pagination, `hasDebt` filter, debt summaries
+- [x] Create-only opening `balance` / `amountOwed` (not writable on PATCH)
+- [x] Soft-delete blocked when outstanding debt ≠ 0
+- [x] Merge-duplicate endpoints for customers **and** suppliers (`دمج أسماء مكررة`)
+- [x] Dev seed script: `npm run seed:parties`
+- [x] Soft-delete audit actions: `category_deleted` / `item_deleted` / `customer_deleted` / `supplier_deleted`
 
-**Done when:** you can add customers/suppliers, search them, and merge two
-duplicate customers from the UI.
+**Frontend** — *Done*
+
+- [x] Customers list (sorted by balance, filter "has debt"), total debt + debtor count
+- [x] Suppliers list, total owed at top
+- [x] Add/edit modals for both (create-only opening balance/amount owed; optional address)
+- [x] Detail pages (identity + balance/owed; no invoice/payment history in Phase 3)
+- [x] Multi-source merge UI for customers and suppliers
+
+**Done when:** you can add customers/suppliers, search them, and merge multiple
+duplicate customers into one from the UI.
+
+**Backend API** (`/api/v1`, JWT + `admin` \| `super_admin`):
+
+| Resource | Endpoints |
+|----------|-----------|
+| Customers | `POST/GET/PATCH/DELETE /customers`, `GET /customers/:id`, `POST /customers/merge` |
+| Suppliers | `POST/GET/PATCH/DELETE /suppliers`, `GET /suppliers/:id`, `POST /suppliers/merge` |
+
+List query params: `q`, `hasDebt`, `isActive`, `page`, `limit`. List response: `{ items, meta, summary }` (`totalDebt` / `totalOwed`).
+
+Merge body: `{ targetId, sourceIds: string[], name?, phone? }` — keeps target, soft-deletes all sources, sums balances / amountOwed.
+
+Modules: `src/modules/customers`, `suppliers`.
 
 ---
 
@@ -236,7 +257,7 @@ correctly attributed in the audit log UI.
 | 0 — Foundation | Done | Done |
 | 1 — Auth & Users | Done | Done |
 | 2 — Categories, Items & Pricing | Done | Done |
-| 3 — Customers & Suppliers | Not started | Not started |
+| 3 — Customers & Suppliers | Done | Done |
 | 4 — Sales Invoicing | Not started | Not started |
 | 5 — Payments | Not started | Not started |
 | 6 — Purchasing & Restocking | Not started | Not started |

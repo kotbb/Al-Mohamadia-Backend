@@ -176,7 +176,7 @@ export class CategoriesService {
       await this.auditService.log(
         {
           userId: user.id,
-          action: 'category_edited',
+          action: 'category_deleted',
           entityType: 'Category',
           entityId: category._id.toString(),
           changes: {

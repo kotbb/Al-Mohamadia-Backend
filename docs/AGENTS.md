@@ -136,6 +136,8 @@ Domains (ownership):
 | `price_changed` | `refCollection: "ItemPriceHistory"` + `refId`; leave `changes` null |
 | `stock_adjusted` | `refCollection: "StockAdjustment"` + `refId`; leave `changes` null |
 | `setting_changed` | Set `changes.value` `{ old, new }`; leave refs null |
+| Soft-delete | Use `*_deleted` (`category_deleted`, `item_deleted`, `customer_deleted`, `supplier_deleted`, …) with `isDeleted` / `isActive` in `changes` — not `*_edited` |
+| Merge | `customer_merged` / `supplier_merged` with `targetId`, `sourceIds[]`, and money fields in `changes` |
 | Other mutations | Set `changes` per-field `{ old, new }`; leave refs null |
 
 Optional `summary` for list UIs. Never update/delete audit rows.
