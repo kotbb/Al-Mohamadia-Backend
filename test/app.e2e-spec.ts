@@ -3,7 +3,6 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
-import { ResponseInterceptor } from './../src/shared/interceptors/response.interceptor';
 
 describe('Health (e2e)', () => {
   let app: INestApplication<App>;
@@ -22,7 +21,6 @@ describe('Health (e2e)', () => {
         transform: true,
       }),
     );
-    app.useGlobalInterceptors(new ResponseInterceptor());
     await app.init();
   });
 

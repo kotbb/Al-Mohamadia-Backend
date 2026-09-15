@@ -4,6 +4,8 @@ import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { CustomersService } from './customers.service';
 import { Customer } from './schemas/customer.schema';
 import { AuditService } from '../audit/audit.service';
+import { Payment } from '../sales-invoices/schemas/payment.schema';
+import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 
@@ -16,6 +18,8 @@ describe('CustomersService', () => {
     countDocuments: jest.Mock;
     aggregate: jest.Mock;
   };
+  let salesInvoiceModel: { updateMany: jest.Mock };
+  let paymentModel: { updateMany: jest.Mock };
   let auditService: { log: jest.Mock };
   let connection: { startSession: jest.Mock };
   let session: {
@@ -75,6 +79,12 @@ describe('CustomersService', () => {
       }),
     };
 
+    salesInvoiceModel = {
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+    };
+    paymentModel = {
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+    };
     auditService = { log: jest.fn().mockResolvedValue({}) };
     connection = { startSession: jest.fn().mockResolvedValue(session) };
 
@@ -82,6 +92,8 @@ describe('CustomersService', () => {
       providers: [
         CustomersService,
         { provide: getModelToken(Customer.name), useValue: customerModel },
+        { provide: getModelToken(SalesInvoice.name), useValue: salesInvoiceModel },
+        { provide: getModelToken(Payment.name), useValue: paymentModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: AuditService, useValue: auditService },
       ],
@@ -217,6 +229,16 @@ describe('CustomersService', () => {
       expect(source2.isDeleted).toBe(true);
       expect(source1.balance).toBe(0);
       expect(source2.balance).toBe(0);
+      expect(salesInvoiceModel.updateMany).toHaveBeenCalledWith(
+        { customerId: { $in: [source1._id, source2._id] } },
+        { $set: { customerId: target._id } },
+        { session },
+      );
+      expect(paymentModel.updateMany).toHaveBeenCalledWith(
+        { customerId: { $in: [source1._id, source2._id] } },
+        { $set: { customerId: target._id } },
+        { session },
+      );
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'customer_merged',

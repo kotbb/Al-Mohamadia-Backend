@@ -16,9 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phase 3 is complete**
-> (customers, suppliers, merge, parties seed + matching frontend). Phase 4 is
-> next (Sales Invoicing).
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phase 4 backend is
+> complete** (sales invoices + PDF/WhatsApp share). Frontend Phase 4 is next.
 
 ---
 
@@ -30,8 +29,9 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 1 | Done | `auth` (login, refresh, logout), `users` (admin CRUD, `GET /users/me`) |
 | 2 | Done | `categories`, `items`, `settings` — see [PHASES.md](./PHASES.md#phase-2--categories-items--pricing) |
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
+| 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 
-Phases 4–10 are not implemented on the backend yet.
+Phases 5–10 are not implemented on the backend yet.
 
 ## What this system does
 
@@ -39,7 +39,7 @@ Phases 4–10 are not implemented on the backend yet.
 | ------------------- | ---------------------------------------------------------------------------- |
 | **Auth & users**    | Login, refresh, logout; `super_admin` manages admins; `admin` runs the shop  |
 | **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, base reference price *(Phase 2 — live)* |
-| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, cancel, PDF    |
+| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, cancel, Arabic PDF + WhatsApp share link *(Phase 4 — live)* |
 | **Payments**        | Payments on new sales + standalone debt payments against customer balance    |
 | **Customers**       | CRUD, running مديونية, search, merge duplicates *(Phase 3 — live)*           |
 | **Suppliers**       | CRUD, amount owed, search, merge duplicates *(Phase 3 — live)*               |
@@ -161,6 +161,7 @@ See [`.env.example`](../.env.example) for the template.
 | `JWT_REFRESH_SECRET`     | Refresh token signing secret (Phase 1) |
 | `JWT_ACCESS_EXPIRES_IN`  | e.g. `10m` (Phase 1)                   |
 | `JWT_REFRESH_EXPIRES_IN` | e.g. `21d` (Phase 1)                   |
+| `PUBLIC_API_BASE_URL`    | Absolute API origin for WhatsApp/public PDF links (default `http://localhost:3000`) |
 | `SUPER_ADMIN_USERNAME`   | Seed script only (`seed:super-admin`)  |
 | `SUPER_ADMIN_PASSWORD`   | Seed script only (`seed:super-admin`)  |
 | `SEED_BALADI_WOOD_METER_PRICE` | Optional override for `seed:catalog` (default `850`) |
@@ -171,6 +172,7 @@ See [`.env.example`](../.env.example) for the template.
 npm run seed:super-admin   # first super_admin (requires SUPER_ADMIN_* in .env)
 npm run seed:catalog       # categories, sample items, baladi_wood_meter_price setting
 npm run seed:parties       # sample customers and suppliers (some with opening balances)
+npm run seed:invoices      # sample cash + customer sales invoices (requires catalog + parties + user)
 ```
 
 All seed scripts are idempotent — safe to re-run; existing records are skipped.

@@ -98,7 +98,7 @@ Domains (ownership):
 | Categories / items / prices | `categories`, `items`, `settings` | `ItemPriceHistory` on price/cost change; `baladi_wood_meter_price` in settings *(Phase 2)* |
 | Customers | `customers` | Balance (مديونية), merge duplicates |
 | Suppliers | `suppliers` | Amount owed |
-| Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, cancel, PDF |
+| Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, cancel, PDF + public share token / WhatsApp payload |
 | Payments | `payments` | On-invoice + standalone debt payments |
 | Purchases | `purchases` | Restock; stock + supplier owed |
 | Inventory | `inventory` | Stock list, جرد / `StockAdjustment`, valuation |
@@ -203,6 +203,16 @@ Hard rules — never weaken for convenience.
   never a bare field update.
 - Dimensions (`thickness` × `width` × `length`, cm) are required on sales
   lines only when item `pricingMode` is `per_cubic_meter`.
+  - Volume m³ = `(T × W × L) / 1_000_000` (6 dp).
+  - `lineTotal` = `quantity × volume × piecePrice` (cubic) or
+    `quantity × piecePrice` (piece).
+  - Stock deduct: cubic → `quantity × volume`; piece → `quantity`.
+    Negative stock is allowed.
+- Cash sales must be fully paid; no overpay/tips. Customer sales:
+  `0 ≤ paid ≤ net`. `piecePrice` may be overridden; `costPriceSnapshot`
+  always from live `Item.cost`.
+- Invoice numbers: `INV-NNNN` via `InvoiceCounter` (sequence keyed by Cairo year).
+- On cancel, void on-invoice payments with `reversedAt` / `reversedBy`.
 
 ------------------------------------------------------------
 
@@ -232,6 +242,9 @@ Hard rules — never weaken for convenience.
   scans of all history when filters exist.
 - Keep invoice create/cancel transactional and short-lived — no long
   external calls inside the Mongo session.
+- PDF download routes use `@SkipResponseEnvelope()` so binary
+  `application/pdf` is not wrapped in `{ success, data }`. Public share
+  PDFs use `@Public()` + `pdfShareToken` (see `PUBLIC_API_BASE_URL`).
 - Do not add Redis, Bull, or a second caching stack unless explicitly
   requested.
 

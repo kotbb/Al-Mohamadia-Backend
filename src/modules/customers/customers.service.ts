@@ -16,6 +16,11 @@ import {
   CustomerResponseDto,
 } from './dto/customer-response.dto';
 import { AuditService } from '../audit/audit.service';
+import { Payment, PaymentDocument } from '../sales-invoices/schemas/payment.schema';
+import {
+  SalesInvoice,
+  SalesInvoiceDocument,
+} from '../sales-invoices/schemas/sales-invoice.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
@@ -27,6 +32,10 @@ export class CustomersService {
   constructor(
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
+    @InjectModel(SalesInvoice.name)
+    private readonly salesInvoiceModel: Model<SalesInvoiceDocument>,
+    @InjectModel(Payment.name)
+    private readonly paymentModel: Model<PaymentDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly auditService: AuditService,
   ) {}
@@ -266,8 +275,6 @@ export class CustomersService {
       throw new NotFoundException('One or more source customers were not found');
     }
 
-    // Phase 4+: reassign SalesInvoice / Payment from each source → target in this same transaction.
-
     const oldTargetBalance = target.balance;
     const oldTargetName = target.name;
     const oldTargetPhone = target.phone;
@@ -320,6 +327,20 @@ export class CustomersService {
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const sourceObjectIds = sources.map((source) => source._id);
+
+      await this.salesInvoiceModel.updateMany(
+        { customerId: { $in: sourceObjectIds } },
+        { $set: { customerId: target._id } },
+        { session },
+      );
+
+      await this.paymentModel.updateMany(
+        { customerId: { $in: sourceObjectIds } },
+        { $set: { customerId: target._id } },
+        { session },
+      );
+
       for (const source of sources) {
         source.isDeleted = true;
         source.isActive = false;

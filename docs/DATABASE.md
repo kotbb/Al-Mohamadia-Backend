@@ -40,8 +40,8 @@ schema changes.
 index on `name` + `phone` for search, index on `balance` for sort/filter.
 **Merge:** `POST /customers/merge` keeps `targetId`, sums `balance` from
 one or more `sourceIds`, optional name/phone overrides on target, soft-deletes
-all sources; audits `customer_merged`. Phase 4+ will re-point invoices/payments
-in the same transaction.
+all sources; audits `customer_merged`. Re-points `SalesInvoice` and `Payment`
+`customerId` from each source to the target in the same transaction.
 
 ---
 
@@ -170,30 +170,48 @@ used across pricing screens. Changes are audited via `AuditLog`
 
 | Field | Type | Notes |
 |---|---|---|
-| invoiceNumber | string | sequential, unique |
+| invoiceNumber | string | unique; format `INV-NNNN` (zero-padded sequence from `InvoiceCounter`, keyed by Cairo calendar year) |
 | type | string enum | `cash_sale` \| `customer_sale` |
 | customerId | ObjectId → Customer \| null | null for cash sale |
-| total | number | subtotal before discount |
-| discount | number | default 0 |
-| paid | number | sum of linked `Payment` records |
+| lines | SalesInvoiceLine[] | embedded; at least one required |
+| total | number | subtotal before discount (server-computed) |
+| discount | number | default 0; must be `0 ≤ discount ≤ total` |
+| paid | number | amount collected at create; must equal net for cash; `0 ≤ paid ≤ net` for customer |
 | remaining | number | `total - discount - paid` |
 | status | string enum | `saved` \| `cancelled` |
 | createdBy | ObjectId → User | |
+| pdfShareToken | string \| null | durable public share secret (`crypto` hex, 64 chars); unique sparse index; minted lazily on first `GET .../share` |
 | createdAt / updatedAt | date | |
 
 **Relationships:** belongs to `Customer` (nullable); created by `User`;
 embeds many `SalesInvoiceLine`; has many `Payment`; logged in `AuditLog`.
 
+**Indexes:** unique `invoiceNumber`; `createdAt`; `customerId`; `status`;
+unique partial on `pdfShareToken` where token is a string.
+
 **Rules:**
 - If `remaining > 0` on a `customer_sale`, add **only** `remaining` to
   `Customer.balance` (مديونية). Do **not** also subtract the on-invoice
   paid amount from balance — that would undercount debt (see `Payment`).
-- Cash sales (`cash_sale`) never change `Customer.balance`.
-- Saving an invoice deducts `Item.stockQuantity` per line.
+- Cash sales (`cash_sale`) never change `Customer.balance`; must be fully
+  paid (`paid === total - discount`, no overpay/tips).
+- Saving an invoice deducts `Item.stockQuantity` per line (may go negative).
+  - `per_piece`: deduct `quantity`
+  - `per_cubic_meter`: deduct `quantity × volume` where
+    `volume = (thickness × width × length) / 1_000_000` (cm → m³, 6 dp)
 - Cancelling an invoice (`status = cancelled`) reverses the stock deduction
   and reverses the `Customer.balance += remaining` that was applied at save
   time (use the invoice’s original `remaining` at save, not a replay of
-  payment rows).
+  payment rows). On-invoice `Payment` rows get `reversedAt` / `reversedBy`.
+- No edit after save — cancel only.
+- Reject deleted or inactive items/customers on create.
+- List filters: optional `status`; `period=day|week|month|year` + `date`
+  (`YYYY-MM-DD`) in **Africa/Cairo** (week = Saturday–Friday); search `q`
+  by invoice number or customer name/phone.
+- PDF: authenticated `GET /sales-invoices/:id/pdf` and public
+  `GET /public/sales-invoices/:token/pdf` (token = `pdfShareToken`).
+  Share payload: `GET /sales-invoices/:id/share` → `{ pdfUrl, whatsappUrl, message }`.
+  PDFs are generated on request (Arabic-primary); tokens do not expire.
 
 ---
 
@@ -202,12 +220,24 @@ embeds many `SalesInvoiceLine`; has many `Payment`; logged in `AuditLog`.
 | Field | Type | Notes |
 |---|---|---|
 | itemId | ObjectId → Item | |
-| quantity | number | |
-| width, length, thickness | number (cm) | required only if `pricingMode = per_cubic_meter` |
-| piecePrice | number | unit price **snapshot** at time of sale |
-| costPriceSnapshot | number | cost **snapshot** at time of sale, used for profit calc |
-| lineTotal | number | |
-| note | string | optional |
+| quantity | number | must be `> 0` |
+| width, length, thickness | number (cm) \| null | required and `> 0` only if `pricingMode = per_cubic_meter` |
+| piecePrice | number | unit price **snapshot** at time of sale (`> 0`; cashier may override live `unitPrice`) |
+| costPriceSnapshot | number | always copied from live `Item.cost` at save (not client-overridable) |
+| lineTotal | number | `per_piece`: `quantity × piecePrice`; `per_cubic_meter`: `quantity × volume × piecePrice` |
+| note | string \| null | optional |
+
+---
+
+## InvoiceCounter
+
+Atomic sequence for sales invoice numbers.
+
+| Field | Type | Notes |
+|---|---|---|
+| key | string | unique, e.g. `sales:2026` |
+| seq | number | incremented with `$inc` inside the create transaction |
+| createdAt / updatedAt | date | |
 
 ---
 
@@ -219,21 +249,24 @@ embeds many `SalesInvoiceLine`; has many `Payment`; logged in `AuditLog`.
 | invoiceId | ObjectId → SalesInvoice \| null | |
 | amount | number | |
 | recordedBy | ObjectId → User | |
-| createdAt | date | |
+| reversedAt | date \| null | set when the linked invoice is cancelled (on-invoice payments) |
+| reversedBy | ObjectId → User \| null | who cancelled / voided the payment |
+| createdAt / updatedAt | date | |
 
 Two shapes — they do **not** affect `Customer.balance` the same way:
 
 1. **Payment on a new sale** — `invoiceId` set (captured while creating a
-   `SalesInvoice`). Updates invoice `paid` / `remaining` only. Does **not**
-   change `Customer.balance` (debt was already set to that invoice’s
-   `remaining` on save). Example: total 100, paid 40 → balance += 60 only;
-   the Payment(40) is history, not a second balance mutation.
+   `SalesInvoice` when `paid > 0`). Updates invoice `paid` / `remaining`
+   only. Does **not** change `Customer.balance` (debt was already set to
+   that invoice’s `remaining` on save). Example: total 100, paid 40 →
+   balance += 60 only; the Payment(40) is history, not a second balance
+   mutation. On cancel, set `reversedAt` / `reversedBy` (do not delete).
 2. **Standalone debt payment** — `invoiceId` null, `customerId` set. Used
    when a customer pays off part of an existing debt on a later date.
-   This **does** reduce `Customer.balance` by `amount`.
+   This **does** reduce `Customer.balance` by `amount`. *(Phase 5)*
 
-Both shapes are logged in `AuditLog`.
-
+Both shapes are logged in `AuditLog`. Active payment history should treat
+`reversedAt != null` as voided.
 ---
 
 ## ItemPriceHistory *(immutable)*
@@ -357,3 +390,4 @@ collection at all — append-only.
 | PurchaseInvoice | PurchaseInvoiceLine | 1 → many (embedded) |
 | ItemPriceHistory | AuditLog | 1 → 1 (referenced via `refCollection`/`refId`) |
 | StockAdjustment | AuditLog | 1 → 1 (referenced via `refCollection`/`refId`) |
+| InvoiceCounter | SalesInvoice | supplies sequential `invoiceNumber` |

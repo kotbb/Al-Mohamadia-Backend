@@ -18,9 +18,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed:super-admin": "ts-node -r tsconfig-paths/register src/scripts/seed-super-admin.ts",
     "seed:catalog": "ts-node -r tsconfig-paths/register src/scripts/seed-catalog.ts",
-    "seed:parties": "ts-node -r tsconfig-paths/register src/scripts/seed-parties.ts"
+    "seed:parties": "ts-node -r tsconfig-paths/register src/scripts/seed-parties.ts",
+    "seed:invoices": "ts-node -r tsconfig-paths/register src/scripts/seed-invoices.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -36,6 +36,7 @@
     "helmet": "^8.3.0",
     "joi": "^18.2.3",
     "mongoose": "^9.7.4",
+    "puppeteer": "^25.11.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -76,6 +77,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!puppeteer|puppeteer-core|@puppeteer)/"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

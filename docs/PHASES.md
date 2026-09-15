@@ -134,13 +134,21 @@ Modules: `src/modules/customers`, `suppliers`.
 
 ## Phase 4 — Sales Invoicing (core feature)
 
-**Backend**
-- `SalesInvoice`, `SalesInvoiceLine` schemas/module
-- Create invoice (transactional): line totals, discount, paid/remaining
-  calc, stock deduction, customer balance update, audit log entry
-- List/filter (all / today / week / month) / search by invoice # or customer
-- Cancel invoice (transactional reversal of stock + balance effects)
-- PDF generation endpoint; WhatsApp share link
+**Backend** — *Done*
+
+- [x] `SalesInvoice`, `SalesInvoiceLine`, `Payment`, `InvoiceCounter` schemas/module
+- [x] Create invoice (transactional): line totals, discount, paid/remaining
+  calc, stock deduction, customer balance update, on-invoice Payment when
+  `paid > 0`, audit `invoice_created`
+- [x] List/filter (`period` + `date` in Africa/Cairo: day/week/month/year;
+  week Sat–Fri) / search by invoice # or customer; optional `status`
+- [x] Cancel invoice (transactional reversal of stock + balance; void
+  payments via `reversedAt` / `reversedBy`)
+- [x] Customer merge re-points `SalesInvoice` / `Payment` to target
+- [x] Dev seed: `npm run seed:invoices`
+- [x] PDF generation (`GET .../pdf`) + public tokenized PDF
+  (`GET /public/sales-invoices/:token/pdf`) + WhatsApp share payload
+  (`GET .../share`)
 
 **Frontend**
 - New-invoice form: customer search-or-cash toggle, multi-line item entry
@@ -153,6 +161,19 @@ Modules: `src/modules/customers`, `suppliers`.
 **Done when:** you can create a real invoice end-to-end, see stock and (if
 applicable) customer debt update correctly, and cancel it with correct
 reversal.
+
+**Backend API** (`/api/v1`, JWT + `admin` \| `super_admin`):
+
+| Resource | Endpoints |
+|----------|-----------|
+| Sales invoices | `POST/GET /sales-invoices`, `GET /sales-invoices/:id`, `POST /sales-invoices/:id/cancel`, `GET /sales-invoices/:id/pdf`, `GET /sales-invoices/:id/share` |
+| Public PDF | `GET /public/sales-invoices/:token/pdf` (no JWT; token = `pdfShareToken`) |
+
+List query params: `q`, `status`, `period`, `date`, `page`, `limit`.
+Create body: `{ type, customerId?, lines[], discount?, paid }`.
+Share response: `{ pdfUrl, whatsappUrl, message }`.
+
+Module: `src/modules/sales-invoices`.
 
 ---
 
@@ -258,7 +279,7 @@ correctly attributed in the audit log UI.
 | 1 — Auth & Users | Done | Done |
 | 2 — Categories, Items & Pricing | Done | Done |
 | 3 — Customers & Suppliers | Done | Done |
-| 4 — Sales Invoicing | Not started | Not started |
+| 4 — Sales Invoicing | Done | Not started |
 | 5 — Payments | Not started | Not started |
 | 6 — Purchasing & Restocking | Not started | Not started |
 | 7 — Inventory Management | Not started | Not started |
