@@ -30,8 +30,9 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 2 | Done | `categories`, `items`, `settings` — see [PHASES.md](./PHASES.md#phase-2--categories-items--pricing) |
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
 | 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
+| 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 
-Phases 5–10 are not implemented on the backend yet.
+Phases 6–10 are not implemented on the backend yet.
 
 ## What this system does
 

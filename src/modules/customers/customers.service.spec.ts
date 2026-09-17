@@ -4,7 +4,7 @@ import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { CustomersService } from './customers.service';
 import { Customer } from './schemas/customer.schema';
 import { AuditService } from '../audit/audit.service';
-import { Payment } from '../sales-invoices/schemas/payment.schema';
+import { Payment } from '../payments/schemas/payment.schema';
 import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
@@ -129,10 +129,7 @@ describe('CustomersService', () => {
         ],
         { session },
       );
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'customer_created' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'customer_created' }), session);
       expect(result.balance).toBe(100);
     });
 
@@ -141,9 +138,7 @@ describe('CustomersService', () => {
         lean: () => ({ exec: () => Promise.resolve({ phone: '01012345678' }) }),
       });
 
-      await expect(
-        service.create({ name: 'أحمد', phone: '01012345678' }, actor),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create({ name: 'أحمد', phone: '01012345678' }, actor)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -176,10 +171,7 @@ describe('CustomersService', () => {
       const result = await service.softDelete(sourceId, actor);
 
       expect(customer.save).toHaveBeenCalledWith({ session });
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'customer_deleted' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'customer_deleted' }), session);
       expect(result.isDeleted).toBe(true);
     });
   });
@@ -188,9 +180,9 @@ describe('CustomersService', () => {
     const sourceId2 = '507f1f77bcf86cd799439013';
 
     it('rejects when sourceIds include targetId', async () => {
-      await expect(
-        service.merge({ targetId: sourceId, sourceIds: [sourceId] }, actor),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.merge({ targetId: sourceId, sourceIds: [sourceId] }, actor)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('sums balances from multiple sources onto target and soft-deletes sources', async () => {
@@ -219,10 +211,7 @@ describe('CustomersService', () => {
         exec: () => Promise.resolve([source1, source2]),
       });
 
-      const result = await service.merge(
-        { targetId, sourceIds: [sourceId, sourceId2] },
-        actor,
-      );
+      const result = await service.merge({ targetId, sourceIds: [sourceId, sourceId2] }, actor);
 
       expect(target.balance).toBe(125);
       expect(source1.isDeleted).toBe(true);
@@ -259,9 +248,9 @@ describe('CustomersService', () => {
         exec: () => Promise.resolve([makeCustomer()]),
       });
 
-      await expect(
-        service.merge({ targetId, sourceIds: [sourceId, sourceId2] }, actor),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.merge({ targetId, sourceIds: [sourceId, sourceId2] }, actor)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

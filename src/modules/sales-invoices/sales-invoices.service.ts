@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { randomBytes } from 'crypto';
@@ -11,33 +7,22 @@ import { AuditService } from '../audit/audit.service';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
+import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../shared/enums/sales-invoice-type.enum';
 import { cairoPeriodRange, cairoYearNow } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
-import {
-  lineTotalForPricing,
-  stockDeltaForLine,
-} from '../../shared/utils/volume/cubic-meter.util';
+import { lineTotalForPricing, stockDeltaForLine } from '../../shared/utils/volume/cubic-meter.util';
 import { SHOP_NAME } from './constants/shop.constant';
 import { CreateSalesInvoiceDto, CreateSalesInvoiceLineDto } from './dto/create-sales-invoice.dto';
 import { ListSalesInvoicesQueryDto } from './dto/list-sales-invoices-query.dto';
-import {
-  SalesInvoiceListResponseDto,
-  SalesInvoiceResponseDto,
-} from './dto/sales-invoice-response.dto';
+import { SalesInvoiceListResponseDto, SalesInvoiceResponseDto } from './dto/sales-invoice-response.dto';
 import { SalesInvoiceShareResponseDto } from './dto/sales-invoice-share-response.dto';
 import { buildSalesInvoicePdf } from './pdf/sales-invoice-pdf.builder';
-import {
-  InvoiceCounter,
-  InvoiceCounterDocument,
-} from './schemas/invoice-counter.schema';
-import { Payment, PaymentDocument } from './schemas/payment.schema';
-import {
-  SalesInvoice,
-  SalesInvoiceDocument,
-} from './schemas/sales-invoice.schema';
+import { InvoiceCounter, InvoiceCounterDocument } from './schemas/invoice-counter.schema';
+import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
+import { SalesInvoice, SalesInvoiceDocument } from './schemas/sales-invoice.schema';
 import { BuiltLine } from './types/built-line.type';
 import { InvoicePdfResult } from './types/invoice-pdf-result.type';
 import { SalesInvoiceListFilter } from './types/sales-invoice-list-filter.type';
@@ -61,10 +46,7 @@ export class SalesInvoicesService {
   ) {}
 
   // Create a new sales invoice
-  public async create(
-    dto: CreateSalesInvoiceDto,
-    user: AuthUser,
-  ): Promise<SalesInvoiceResponseDto> {
+  public async create(dto: CreateSalesInvoiceDto, user: AuthUser): Promise<SalesInvoiceResponseDto> {
     if (!dto.lines?.length) {
       throw new BadRequestException('Invoice must have at least one line');
     }
@@ -78,9 +60,7 @@ export class SalesInvoicesService {
     }
 
     const itemIds = [...new Set(dto.lines.map((line) => line.itemId))];
-    const items = await this.itemModel
-      .find({ _id: { $in: itemIds }, isDeleted: false })
-      .exec();
+    const items = await this.itemModel.find({ _id: { $in: itemIds }, isDeleted: false }).exec();
 
     if (items.length !== itemIds.length) {
       throw new NotFoundException('One or more items were not found');
@@ -95,9 +75,7 @@ export class SalesInvoicesService {
 
     let customer: CustomerDocument | null = null;
     if (dto.type === SalesInvoiceType.CUSTOMER_SALE && dto.customerId) {
-      customer = await this.customerModel
-        .findOne({ _id: dto.customerId, isDeleted: false })
-        .exec();
+      customer = await this.customerModel.findOne({ _id: dto.customerId, isDeleted: false }).exec();
       if (!customer) {
         throw new NotFoundException('Customer not found');
       }
@@ -106,9 +84,7 @@ export class SalesInvoicesService {
       }
     }
 
-    const builtLines = dto.lines.map((lineDto) =>
-      this.buildLine(lineDto, itemById.get(lineDto.itemId)!),
-    );
+    const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
 
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
     const discount = roundMoney(dto.discount ?? 0);
@@ -136,10 +112,7 @@ export class SalesInvoicesService {
     session.startTransaction();
     try {
       const invoiceNumber = await this.nextInvoiceNumber(session);
-      const customerId =
-        dto.type === SalesInvoiceType.CUSTOMER_SALE && customer
-          ? customer._id
-          : null;
+      const customerId = dto.type === SalesInvoiceType.CUSTOMER_SALE && customer ? customer._id : null;
 
       const [created] = await this.salesInvoiceModel.create(
         [
@@ -161,18 +134,10 @@ export class SalesInvoicesService {
       );
 
       for (const row of builtLines) {
-        await this.itemModel.updateOne(
-          { _id: row.itemId },
-          { $inc: { stockQuantity: -row.stockDelta } },
-          { session },
-        );
+        await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: -row.stockDelta } }, { session });
       }
 
-      if (
-        dto.type === SalesInvoiceType.CUSTOMER_SALE &&
-        customer &&
-        remaining > 0
-      ) {
+      if (dto.type === SalesInvoiceType.CUSTOMER_SALE && customer && remaining > 0) {
         customer.balance = roundMoney(customer.balance + remaining);
         await customer.save({ session });
       }
@@ -184,6 +149,8 @@ export class SalesInvoicesService {
               customerId,
               invoiceId: created._id,
               amount: paid,
+              method: dto.paymentMethod ?? PaymentMethod.CASH,
+              notes: dto.paymentNotes ? dto.paymentNotes.trim() : null,
               recordedBy: new Types.ObjectId(user.id),
               reversedAt: null,
               reversedBy: null,
@@ -244,12 +211,7 @@ export class SalesInvoicesService {
     const skip = (page - 1) * limit;
 
     const [docs, total] = await Promise.all([
-      this.salesInvoiceModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec(),
+      this.salesInvoiceModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
       this.salesInvoiceModel.countDocuments(filter).exec(),
     ]);
 
@@ -296,22 +258,11 @@ export class SalesInvoicesService {
           lengthCm: line.length,
         });
 
-        await this.itemModel.updateOne(
-          { _id: line.itemId },
-          { $inc: { stockQuantity: stockDelta } },
-          { session },
-        );
+        await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
       }
 
-      if (
-        invoice.type === SalesInvoiceType.CUSTOMER_SALE &&
-        invoice.customerId &&
-        invoice.remaining > 0
-      ) {
-        const customer = await this.customerModel
-          .findById(invoice.customerId)
-          .session(session)
-          .exec();
+      if (invoice.type === SalesInvoiceType.CUSTOMER_SALE && invoice.customerId && invoice.remaining > 0) {
+        const customer = await this.customerModel.findById(invoice.customerId).session(session).exec();
         if (!customer) {
           throw new NotFoundException('Customer not found');
         }
@@ -391,9 +342,7 @@ export class SalesInvoicesService {
       await invoice.save();
     }
 
-    const baseUrl = this.configService
-      .get<string>('PUBLIC_API_BASE_URL', 'http://localhost:3000')
-      .replace(/\/$/, '');
+    const baseUrl = this.configService.get<string>('PUBLIC_API_BASE_URL', 'http://localhost:3000').replace(/\/$/, '');
     const pdfUrl = `${baseUrl}/api/v1/public/sales-invoices/${invoice.pdfShareToken}/pdf`;
     const message = `فاتورة ${SHOP_NAME} رقم ${invoice.invoiceNumber}\n${pdfUrl}`;
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
@@ -437,9 +386,7 @@ export class SalesInvoicesService {
       customerPhone,
       lines: invoice.lines.map((line) => {
         const item = itemById.get(line.itemId.toString());
-        const itemLabel = item
-          ? `${item.name} (${item.code})`
-          : line.itemId.toString();
+        const itemLabel = item ? `${item.name} (${item.code})` : line.itemId.toString();
         return {
           itemLabel,
           quantity: line.quantity,
@@ -468,19 +415,11 @@ export class SalesInvoicesService {
 
     const isCubic = item.pricingMode === PricingMode.PER_CUBIC_METER;
     if (isCubic) {
-      if (
-        lineDto.thickness === undefined ||
-        lineDto.width === undefined ||
-        lineDto.length === undefined
-      ) {
-        throw new BadRequestException(
-          `Dimensions are required for cubic-meter item: ${item.code}`,
-        );
+      if (lineDto.thickness === undefined || lineDto.width === undefined || lineDto.length === undefined) {
+        throw new BadRequestException(`Dimensions are required for cubic-meter item: ${item.code}`);
       }
       if (lineDto.thickness <= 0 || lineDto.width <= 0 || lineDto.length <= 0) {
-        throw new BadRequestException(
-          `Dimensions must be greater than 0 for item: ${item.code}`,
-        );
+        throw new BadRequestException(`Dimensions must be greater than 0 for item: ${item.code}`);
       }
     }
 
@@ -509,10 +448,7 @@ export class SalesInvoicesService {
       lengthCm: length,
     });
 
-    const note =
-      lineDto.note !== undefined && lineDto.note.trim() !== ''
-        ? lineDto.note.trim()
-        : null;
+    const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
 
     return {
       itemId: item._id.toString(),
@@ -546,9 +482,7 @@ export class SalesInvoicesService {
     return `INV-${seq}`;
   }
 
-  private async buildListFilter(
-    query: ListSalesInvoicesQueryDto,
-  ): Promise<SalesInvoiceListFilter> {
+  private async buildListFilter(query: ListSalesInvoicesQueryDto): Promise<SalesInvoiceListFilter> {
     const filter: SalesInvoiceListFilter = {};
 
     if (query.status) {
@@ -569,10 +503,7 @@ export class SalesInvoicesService {
       const matchingCustomers = await this.customerModel
         .find({
           isDeleted: false,
-          $or: [
-            { name: { $regex: escaped, $options: 'i' } },
-            { phone: { $regex: escaped, $options: 'i' } },
-          ],
+          $or: [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped, $options: 'i' } }],
         })
         .select('_id')
         .lean()

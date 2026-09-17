@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { Supplier, SupplierDocument } from './schemas/supplier.schema';
@@ -11,10 +6,7 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { MergeSuppliersDto } from './dto/merge-suppliers.dto';
 import { ListSuppliersQueryDto } from './dto/list-suppliers-query.dto';
-import {
-  SupplierListResponseDto,
-  SupplierResponseDto,
-} from './dto/supplier-response.dto';
+import { SupplierListResponseDto, SupplierResponseDto } from './dto/supplier-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
@@ -255,9 +247,7 @@ export class SuppliersService {
       throw new NotFoundException('Target supplier not found');
     }
 
-    const sources = await this.supplierModel
-      .find({ _id: { $in: dto.sourceIds }, isDeleted: false })
-      .exec();
+    const sources = await this.supplierModel.find({ _id: { $in: dto.sourceIds }, isDeleted: false }).exec();
 
     if (sources.length !== dto.sourceIds.length) {
       throw new NotFoundException('One or more source suppliers were not found');
@@ -371,10 +361,7 @@ export class SuppliersService {
 
     if (query.q?.trim()) {
       const escaped = query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { name: { $regex: escaped, $options: 'i' } },
-        { phone: { $regex: escaped, $options: 'i' } },
-      ];
+      filter.$or = [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped, $options: 'i' } }];
     }
 
     return filter;

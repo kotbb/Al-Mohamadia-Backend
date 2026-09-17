@@ -6,11 +6,8 @@ import { Item, ItemSchema } from '../items/schemas/item.schema';
 import { SalesInvoicesController } from './sales-invoices.controller';
 import { PublicSalesInvoicesController } from './public-sales-invoices.controller';
 import { SalesInvoicesService } from './sales-invoices.service';
-import {
-  InvoiceCounter,
-  InvoiceCounterSchema,
-} from './schemas/invoice-counter.schema';
-import { Payment, PaymentSchema } from './schemas/payment.schema';
+import { InvoiceCounter, InvoiceCounterSchema } from './schemas/invoice-counter.schema';
+import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceSchema } from './schemas/sales-invoice.schema';
 
 @Module({

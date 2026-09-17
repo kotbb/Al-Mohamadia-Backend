@@ -1,9 +1,5 @@
 import { SalesInvoicePeriod } from '../../enums/sales-invoice-period.enum';
-import {
-  cairoPeriodRange,
-  formatCairoDate,
-  parseIsoDateParts,
-} from './cairo-period.util';
+import { cairoPeriodRange, formatCairoDate, parseIsoDateParts } from './cairo-period.util';
 
 describe('cairo-period.util', () => {
   it('parses ISO date parts', () => {

@@ -36,11 +36,7 @@ export class UsersController {
   // PATCH /users/:id (SUPER ADMIN)
   @Patch(':id')
   @Roles(UserRole.SUPER_ADMIN)
-  public update(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: UpdateUserDto,
-    @CurrentUser() user: AuthUser,
-  ) {
+  public update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: AuthUser) {
     return this.usersService.updateUser(id, dto, user);
   }
 

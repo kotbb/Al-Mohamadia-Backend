@@ -4,7 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { SalesInvoicesService } from './sales-invoices.service';
 import { SalesInvoice } from './schemas/sales-invoice.schema';
-import { Payment } from './schemas/payment.schema';
+import { Payment } from '../payments/schemas/payment.schema';
 import { InvoiceCounter } from './schemas/invoice-counter.schema';
 import { Customer } from '../customers/schemas/customer.schema';
 import { Item } from '../items/schemas/item.schema';
@@ -228,17 +228,10 @@ describe('SalesInvoicesService', () => {
         actor,
       );
 
-      expect(itemModel.updateOne).toHaveBeenCalledWith(
-        { _id: itemId },
-        { $inc: { stockQuantity: -2 } },
-        { session },
-      );
+      expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: itemId }, { $inc: { stockQuantity: -2 } }, { session });
       expect(paymentModel.create).toHaveBeenCalled();
       expect(customerModel.findOne).not.toHaveBeenCalled();
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'invoice_created' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'invoice_created' }), session);
       expect(result.remaining).toBe(0);
     });
 
@@ -260,9 +253,7 @@ describe('SalesInvoicesService', () => {
       customerModel.findOne.mockReturnValue({
         exec: () => Promise.resolve(customer),
       });
-      salesInvoiceModel.create.mockResolvedValue([
-        makeInvoice({ paid: 400, remaining: 500 }),
-      ]);
+      salesInvoiceModel.create.mockResolvedValue([makeInvoice({ paid: 400, remaining: 500 })]);
 
       await service.create(
         {
@@ -423,16 +414,12 @@ describe('SalesInvoicesService', () => {
         { session },
       );
       expect(result.status).toBe(SalesInvoiceStatus.CANCELLED);
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'invoice_cancelled' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'invoice_cancelled' }), session);
     });
 
     it('rejects double cancel', async () => {
       salesInvoiceModel.findById.mockReturnValue({
-        exec: () =>
-          Promise.resolve(makeInvoice({ status: SalesInvoiceStatus.CANCELLED })),
+        exec: () => Promise.resolve(makeInvoice({ status: SalesInvoiceStatus.CANCELLED })),
       });
 
       await expect(service.cancel(invoiceId, actor)).rejects.toThrow(BadRequestException);
@@ -476,49 +463,41 @@ describe('SalesInvoicesService', () => {
       expect(result.pdfUrl).toContain('existing-token-value-0123456789abcdef');
     });
 
-    it(
-      'builds PDF buffer for invoice id',
-      async () => {
-        const invoice = makeInvoice();
-        salesInvoiceModel.findById.mockReturnValue({
-          exec: () => Promise.resolve(invoice),
-        });
-        itemModel.find.mockReturnValue({
-          exec: () => Promise.resolve([makeItem()]),
-        });
+    it('builds PDF buffer for invoice id', async () => {
+      const invoice = makeInvoice();
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(invoice),
+      });
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem()]),
+      });
 
-        const result = await service.getPdfBufferById(invoiceId);
+      const result = await service.getPdfBufferById(invoiceId);
 
-        expect(result.invoiceNumber).toBe('INV-0001');
-        expect(result.buffer.length).toBeGreaterThan(100);
-        expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
-      },
-      60_000,
-    );
+      expect(result.invoiceNumber).toBe('INV-0001');
+      expect(result.buffer.length).toBeGreaterThan(100);
+      expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
+    }, 60_000);
 
-    it(
-      'builds PDF by public token and 404s on unknown token',
-      async () => {
-        const invoice = makeInvoice({
-          pdfShareToken: 'tok',
-          status: SalesInvoiceStatus.CANCELLED,
-        });
-        salesInvoiceModel.findOne.mockReturnValue({
-          exec: () => Promise.resolve(invoice),
-        });
-        itemModel.find.mockReturnValue({
-          exec: () => Promise.resolve([makeItem()]),
-        });
+    it('builds PDF by public token and 404s on unknown token', async () => {
+      const invoice = makeInvoice({
+        pdfShareToken: 'tok',
+        status: SalesInvoiceStatus.CANCELLED,
+      });
+      salesInvoiceModel.findOne.mockReturnValue({
+        exec: () => Promise.resolve(invoice),
+      });
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem()]),
+      });
 
-        const result = await service.getPdfBufferByToken('tok');
-        expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
+      const result = await service.getPdfBufferByToken('tok');
+      expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
 
-        salesInvoiceModel.findOne.mockReturnValue({
-          exec: () => Promise.resolve(null),
-        });
-        await expect(service.getPdfBufferByToken('missing')).rejects.toThrow(NotFoundException);
-      },
-      60_000,
-    );
+      salesInvoiceModel.findOne.mockReturnValue({
+        exec: () => Promise.resolve(null),
+      });
+      await expect(service.getPdfBufferByToken('missing')).rejects.toThrow(NotFoundException);
+    }, 60_000);
   });
 });

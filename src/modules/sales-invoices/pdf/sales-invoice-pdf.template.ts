@@ -5,10 +5,7 @@ import { formatCairoDate } from '../../../shared/utils/period/cairo-period.util'
 import { InvoicePdfInput } from '../types/invoice-pdf-input.type';
 
 function resolveAsset(...parts: string[]): string {
-  const candidates = [
-    join(process.cwd(), ...parts),
-    join(__dirname, '..', '..', '..', '..', ...parts),
-  ];
+  const candidates = [join(process.cwd(), ...parts), join(__dirname, '..', '..', '..', '..', ...parts)];
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
       return candidate;
@@ -49,17 +46,12 @@ function formatDate(date: Date): string {
  */
 export function buildSalesInvoiceHtml(input: InvoicePdfInput): string {
   const logoUri = fileDataUri(resolveAsset('assets', 'images', 'icon-mark.png'), 'image/png');
-  const fontRegularUri = fileDataUri(
-    resolveAsset('assets', 'fonts', 'Cairo-Regular.ttf'),
-    'font/ttf',
-  );
+  const fontRegularUri = fileDataUri(resolveAsset('assets', 'fonts', 'Cairo-Regular.ttf'), 'font/ttf');
   const fontBoldUri = fileDataUri(resolveAsset('assets', 'fonts', 'Cairo-Bold.ttf'), 'font/ttf');
 
   const customerName = input.customerName?.trim() ? input.customerName.trim() : 'نقدي';
 
-  const hasDimensions = input.lines.some(
-    (l) => l.thickness != null || l.width != null || l.length != null,
-  );
+  const hasDimensions = input.lines.some((l) => l.thickness != null || l.width != null || l.length != null);
 
   const lineRows = input.lines
     .map((line) => {
@@ -93,9 +85,7 @@ export function buildSalesInvoiceHtml(input: InvoicePdfInput): string {
     .join('');
 
   const cancelledBanner =
-    input.status === SalesInvoiceStatus.CANCELLED
-      ? `<div class="cancelled">${escapeHtml('فاتورة ملغاة')}</div>`
-      : '';
+    input.status === SalesInvoiceStatus.CANCELLED ? `<div class="cancelled">${escapeHtml('فاتورة ملغاة')}</div>` : '';
 
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -348,10 +338,14 @@ export function buildSalesInvoiceHtml(input: InvoicePdfInput): string {
       <thead>
         <tr>
           <th class="col-item">الصنف</th>
-          ${hasDimensions ? `
+          ${
+            hasDimensions
+              ? `
           <th class="col-dim">التخانة</th>
           <th class="col-dim">العرض</th>
-          <th class="col-dim">الطول</th>` : ''}
+          <th class="col-dim">الطول</th>`
+              : ''
+          }
           <th class="col-qty">العدد</th>
           <th class="col-price">سعر الوحدة</th>
           <th class="col-total">الإجمالي</th>
@@ -368,11 +362,15 @@ export function buildSalesInvoiceHtml(input: InvoicePdfInput): string {
           <span class="label">المطلوب:</span>
           <span class="value">${escapeHtml(money(input.total))}</span>
         </div>
-        ${input.discount > 0 ? `
+        ${
+          input.discount > 0
+            ? `
         <div class="row">
           <span class="label">الخصم:</span>
           <span class="value">${escapeHtml(money(input.discount))}</span>
-        </div>` : ''}
+        </div>`
+            : ''
+        }
         <div class="row">
           <span class="label">المدفوع:</span>
           <span class="value">${escapeHtml(money(input.paid))}</span>

@@ -1,14 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Matches,
-  Max,
-  Min,
-  ValidateIf,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, Min, ValidateIf } from 'class-validator';
 import { SalesInvoicePeriod } from '../../../shared/enums/sales-invoice-period.enum';
 import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.enum';
 

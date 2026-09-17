@@ -1,9 +1,7 @@
 /**
  * Trims an optional address. Returns null when missing or blank after trim.
  */
-export function normalizeOptionalAddress(
-  value?: string | null,
-): string | null {
+export function normalizeOptionalAddress(value?: string | null): string | null {
   if (value === undefined || value === null) {
     return null;
   }

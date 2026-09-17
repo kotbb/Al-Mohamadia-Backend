@@ -38,7 +38,7 @@ export async function buildSalesInvoicePdf(input: InvoicePdfInput): Promise<Buff
     await page.setContent(html, { waitUntil: 'load' });
     // Data-URI fonts/images are inlined; brief settle for layout/fonts.
     await page.evaluate(async () => {
-      if (document.fonts?.ready) {
+      if ('fonts' in document) {
         await document.fonts.ready;
       }
     });

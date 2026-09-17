@@ -14,6 +14,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { SalesInvoicesModule } from './modules/sales-invoices/sales-invoices.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import * as Joi from 'joi';
 
 @Module({
@@ -51,6 +52,7 @@ import * as Joi from 'joi';
     ItemsModule,
     SettingsModule,
     SalesInvoicesModule,
+    PaymentsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AppExceptionsHandler },

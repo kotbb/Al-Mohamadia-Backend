@@ -84,7 +84,6 @@ export class CategoriesService {
 
   // Update Category
   public async update(id: string, dto: UpdateCategoryDto, user: AuthUser): Promise<CategoryResponseDto> {
-
     const category = await this.categoryModel.findOne({ _id: id, isDeleted: false }).exec();
     if (!category) {
       throw new NotFoundException('Category not found');
@@ -151,7 +150,6 @@ export class CategoriesService {
 
   // Soft Delete Category
   public async softDelete(id: string, user: AuthUser): Promise<CategoryResponseDto> {
-
     const category = await this.categoryModel.findOne({ _id: id, isDeleted: false }).exec();
     if (!category) {
       throw new NotFoundException('Category not found');

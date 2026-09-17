@@ -97,10 +97,7 @@ describe('SuppliersService', () => {
 
   describe('create', () => {
     it('creates with opening amountOwed and optional null phone', async () => {
-      const result = await service.create(
-        { name: 'مورد', address: 'الإسكندرية', amountOwed: 200.444 },
-        actor,
-      );
+      const result = await service.create({ name: 'مورد', address: 'الإسكندرية', amountOwed: 200.444 }, actor);
 
       expect(supplierModel.create).toHaveBeenCalledWith(
         [
@@ -112,10 +109,7 @@ describe('SuppliersService', () => {
         ],
         { session },
       );
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'supplier_created' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'supplier_created' }), session);
       expect(result.amountOwed).toBe(200);
     });
 
@@ -124,9 +118,7 @@ describe('SuppliersService', () => {
         lean: () => ({ exec: () => Promise.resolve({ phone: '01055556666' }) }),
       });
 
-      await expect(
-        service.create({ name: 'مورد', phone: '01055556666' }, actor),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create({ name: 'مورد', phone: '01055556666' }, actor)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -157,10 +149,7 @@ describe('SuppliersService', () => {
 
       await service.softDelete(sourceId, actor);
 
-      expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'supplier_deleted' }),
-        session,
-      );
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'supplier_deleted' }), session);
     });
   });
 
@@ -168,9 +157,9 @@ describe('SuppliersService', () => {
     const sourceId2 = '507f1f77bcf86cd799439023';
 
     it('rejects when sourceIds include targetId', async () => {
-      await expect(
-        service.merge({ targetId: sourceId, sourceIds: [sourceId] }, actor),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.merge({ targetId: sourceId, sourceIds: [sourceId] }, actor)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('sums amountOwed from multiple sources onto target and soft-deletes sources', async () => {
@@ -199,10 +188,7 @@ describe('SuppliersService', () => {
         exec: () => Promise.resolve([source1, source2]),
       });
 
-      const result = await service.merge(
-        { targetId, sourceIds: [sourceId, sourceId2] },
-        actor,
-      );
+      const result = await service.merge({ targetId, sourceIds: [sourceId, sourceId2] }, actor);
 
       expect(target.amountOwed).toBe(120);
       expect(source1.isDeleted).toBe(true);
@@ -226,9 +212,7 @@ describe('SuppliersService', () => {
         exec: () => Promise.resolve(null),
       });
 
-      await expect(
-        service.merge({ targetId, sourceIds: [sourceId] }, actor),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.merge({ targetId, sourceIds: [sourceId] }, actor)).rejects.toThrow(NotFoundException);
     });
   });
 });

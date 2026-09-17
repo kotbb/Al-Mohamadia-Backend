@@ -246,10 +246,12 @@ Atomic sequence for sales invoice numbers.
 | Field | Type | Notes |
 |---|---|---|
 | customerId | ObjectId → Customer \| null | |
-| invoiceId | ObjectId → SalesInvoice \| null | |
-| amount | number | |
+| invoiceId | ObjectId → SalesInvoice \| null | null for standalone debt payments |
+| amount | number | EGP, > 0, rounded to 2 decimals |
+| method | string enum | `cash` \| `instapay` \| `vodafone_cash` \| `bank_transfer` \| `check`, default `cash` |
+| notes | string \| null | optional memo / check number / transaction reference |
 | recordedBy | ObjectId → User | |
-| reversedAt | date \| null | set when the linked invoice is cancelled (on-invoice payments) |
+| reversedAt | date \| null | set when cancelled (on invoice cancel or standalone payment cancel) |
 | reversedBy | ObjectId → User \| null | who cancelled / voided the payment |
 | createdAt / updatedAt | date | |
 

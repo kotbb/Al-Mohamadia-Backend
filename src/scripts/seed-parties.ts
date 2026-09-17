@@ -38,10 +38,7 @@ const SUPPLIER_SEEDS: SupplierSeed[] = [
   { name: 'مورد محلي بدون هاتف', address: 'الإسكندرية', amountOwed: 1200 },
 ];
 
-async function findOrCreateCustomer(
-  customerModel: Model<CustomerDocument>,
-  seed: CustomerSeed,
-): Promise<void> {
+async function findOrCreateCustomer(customerModel: Model<CustomerDocument>, seed: CustomerSeed): Promise<void> {
   const phone = normalizePhone(seed.phone);
   const existing = await customerModel.findOne({ phone, isDeleted: false }).exec();
   if (existing) {
@@ -60,10 +57,7 @@ async function findOrCreateCustomer(
   console.log(`Customer created: ${seed.name} (${phone})`);
 }
 
-async function findOrCreateSupplier(
-  supplierModel: Model<SupplierDocument>,
-  seed: SupplierSeed,
-): Promise<void> {
+async function findOrCreateSupplier(supplierModel: Model<SupplierDocument>, seed: SupplierSeed): Promise<void> {
   const phone = seed.phone ? normalizePhone(seed.phone) : null;
   const normalizedPhone = phone && phone.length > 0 ? phone : null;
 

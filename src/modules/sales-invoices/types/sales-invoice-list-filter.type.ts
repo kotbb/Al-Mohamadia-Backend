@@ -4,8 +4,5 @@ import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.e
 export type SalesInvoiceListFilter = {
   status?: SalesInvoiceStatus;
   createdAt?: { $gte: Date; $lt: Date };
-  $or?: Array<
-    | { invoiceNumber: { $regex: string; $options: string } }
-    | { customerId: { $in: Types.ObjectId[] } }
-  >;
+  $or?: Array<{ invoiceNumber: { $regex: string; $options: string } } | { customerId: { $in: Types.ObjectId[] } }>;
 };

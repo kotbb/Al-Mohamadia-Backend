@@ -64,11 +64,7 @@ describe('UsersController', () => {
 
   it('delegates update to UsersService.updateUser', async () => {
     await controller.update('507f1f77bcf86cd799439011', { isActive: false }, actor);
-    expect(usersService.updateUser).toHaveBeenCalledWith(
-      '507f1f77bcf86cd799439011',
-      { isActive: false },
-      actor,
-    );
+    expect(usersService.updateUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011', { isActive: false }, actor);
   });
 
   it('delegates remove to UsersService.softDelete', async () => {

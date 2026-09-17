@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -32,7 +32,7 @@ describe('JwtAuthGuard', () => {
         getRequest: () => request,
       }),
       request,
-    } as never & { request: typeof request };
+    } as unknown as ExecutionContext & { request: typeof request };
   };
 
   it('allows public routes without a token', async () => {

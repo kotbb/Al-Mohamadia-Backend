@@ -4,11 +4,8 @@ import { CustomersService } from './customers.service';
 import { CustomersController } from './customers.controller';
 import { Customer, CustomerSchema } from './schemas/customer.schema';
 import { AuditModule } from '../audit/audit.module';
-import { Payment, PaymentSchema } from '../sales-invoices/schemas/payment.schema';
-import {
-  SalesInvoice,
-  SalesInvoiceSchema,
-} from '../sales-invoices/schemas/sales-invoice.schema';
+import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
+import { SalesInvoice, SalesInvoiceSchema } from '../sales-invoices/schemas/sales-invoice.schema';
 
 @Module({
   imports: [

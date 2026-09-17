@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Header,
-  Param,
-  Post,
-  Query,
-  StreamableFile,
-} from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Query, StreamableFile } from '@nestjs/common';
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { ListSalesInvoicesQueryDto } from './dto/list-sales-invoices-query.dto';
@@ -40,9 +31,7 @@ export class SalesInvoicesController {
   @Get(':id/pdf')
   @SkipResponseEnvelope()
   @Header('Content-Type', 'application/pdf')
-  public async getPdf(
-    @Param('id', ParseObjectIdPipe) id: string,
-  ): Promise<StreamableFile> {
+  public async getPdf(@Param('id', ParseObjectIdPipe) id: string): Promise<StreamableFile> {
     const result = await this.salesInvoicesService.getPdfBufferById(id);
     return toPdfStreamableFile(result.buffer, result.invoiceNumber);
   }
@@ -61,10 +50,7 @@ export class SalesInvoicesController {
 
   // POST /sales-invoices/:id/cancel
   @Post(':id/cancel')
-  public cancel(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @CurrentUser() user: AuthUser,
-  ) {
+  public cancel(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.salesInvoicesService.cancel(id, user);
   }
 }

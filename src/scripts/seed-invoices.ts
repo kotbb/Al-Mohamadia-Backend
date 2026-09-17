@@ -5,24 +5,15 @@ import { AppModule } from '../app.module';
 import { Customer, CustomerDocument } from '../modules/customers/schemas/customer.schema';
 import { Item, ItemDocument } from '../modules/items/schemas/item.schema';
 import { User, UserDocument } from '../modules/users/schemas/user.schema';
-import {
-  InvoiceCounter,
-  InvoiceCounterDocument,
-} from '../modules/sales-invoices/schemas/invoice-counter.schema';
-import { Payment, PaymentDocument } from '../modules/sales-invoices/schemas/payment.schema';
-import {
-  SalesInvoice,
-  SalesInvoiceDocument,
-} from '../modules/sales-invoices/schemas/sales-invoice.schema';
+import { InvoiceCounter, InvoiceCounterDocument } from '../modules/sales-invoices/schemas/invoice-counter.schema';
+import { Payment, PaymentDocument } from '../modules/payments/schemas/payment.schema';
+import { SalesInvoice, SalesInvoiceDocument } from '../modules/sales-invoices/schemas/sales-invoice.schema';
 import { PricingMode } from '../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../shared/enums/sales-invoice-type.enum';
 import { cairoYearNow } from '../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../shared/utils/round-money/round-money.util';
-import {
-  lineTotalForPricing,
-  stockDeltaForLine,
-} from '../shared/utils/volume/cubic-meter.util';
+import { lineTotalForPricing, stockDeltaForLine } from '../shared/utils/volume/cubic-meter.util';
 
 async function seedInvoices() {
   const app = await NestFactory.createApplicationContext(AppModule, {
@@ -30,13 +21,9 @@ async function seedInvoices() {
   });
 
   try {
-    const salesInvoiceModel = app.get<Model<SalesInvoiceDocument>>(
-      getModelToken(SalesInvoice.name),
-    );
+    const salesInvoiceModel = app.get<Model<SalesInvoiceDocument>>(getModelToken(SalesInvoice.name));
     const paymentModel = app.get<Model<PaymentDocument>>(getModelToken(Payment.name));
-    const counterModel = app.get<Model<InvoiceCounterDocument>>(
-      getModelToken(InvoiceCounter.name),
-    );
+    const counterModel = app.get<Model<InvoiceCounterDocument>>(getModelToken(InvoiceCounter.name));
     const itemModel = app.get<Model<ItemDocument>>(getModelToken(Item.name));
     const customerModel = app.get<Model<CustomerDocument>>(getModelToken(Customer.name));
     const userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
@@ -46,32 +33,22 @@ async function seedInvoices() {
     const customerNumber = `INV-9002`;
 
     const existingCash = await salesInvoiceModel.findOne({ invoiceNumber: cashNumber }).exec();
-    const existingCustomer = await salesInvoiceModel
-      .findOne({ invoiceNumber: customerNumber })
-      .exec();
+    const existingCustomer = await salesInvoiceModel.findOne({ invoiceNumber: customerNumber }).exec();
     if (existingCash && existingCustomer) {
       console.log('Seed invoices already exist; skipping');
       return;
     }
 
-    const pieceItem = await itemModel
-      .findOne({ code: 'MDF-18', isDeleted: false, isActive: true })
-      .exec();
-    const cubicItem = await itemModel
-      .findOne({ code: 'WOOD-BALADI', isDeleted: false, isActive: true })
-      .exec();
-    const customer = await customerModel
-      .findOne({ phone: '01012345678', isDeleted: false, isActive: true })
-      .exec();
+    const pieceItem = await itemModel.findOne({ code: 'MDF-18', isDeleted: false, isActive: true }).exec();
+    const cubicItem = await itemModel.findOne({ code: 'WOOD-BALADI', isDeleted: false, isActive: true }).exec();
+    const customer = await customerModel.findOne({ phone: '01012345678', isDeleted: false, isActive: true }).exec();
     const user = await userModel.findOne({ isDeleted: false }).exec();
 
     if (!pieceItem || !cubicItem || !customer || !user) {
-      throw new Error(
-        'Missing seed prerequisites. Run seed:super-admin, seed:catalog, and seed:parties first.',
-      );
+      throw new Error('Missing seed prerequisites. Run seed:super-admin, seed:catalog, and seed:parties first.');
     }
 
-    const createdBy = user._id as Types.ObjectId;
+    const createdBy = user._id;
 
     if (!existingCash) {
       const piecePrice = roundMoney(pieceItem.unitPrice);
@@ -114,10 +91,7 @@ async function seedInvoices() {
         },
       ]);
 
-      await itemModel.updateOne(
-        { _id: pieceItem._id },
-        { $inc: { stockQuantity: -stockDelta } },
-      );
+      await itemModel.updateOne({ _id: pieceItem._id }, { $inc: { stockQuantity: -stockDelta } });
       await paymentModel.create({
         customerId: null,
         invoiceId: invoice._id,
@@ -182,10 +156,7 @@ async function seedInvoices() {
         },
       ]);
 
-      await itemModel.updateOne(
-        { _id: cubicItem._id },
-        { $inc: { stockQuantity: -stockDelta } },
-      );
+      await itemModel.updateOne({ _id: cubicItem._id }, { $inc: { stockQuantity: -stockDelta } });
       customer.balance = roundMoney(customer.balance + remaining);
       await customer.save();
       await paymentModel.create({
@@ -202,11 +173,7 @@ async function seedInvoices() {
     const key = `sales:${year}`;
     const counter = await counterModel.findOne({ key }).exec();
     if (!counter || counter.seq < 9002) {
-      await counterModel.findOneAndUpdate(
-        { key },
-        { $set: { seq: 9002 } },
-        { upsert: true },
-      );
+      await counterModel.findOneAndUpdate({ key }, { $set: { seq: 9002 } }, { upsert: true });
     }
 
     console.log('seed:invoices complete');

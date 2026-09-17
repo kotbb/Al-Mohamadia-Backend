@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
 
 export type PaymentDocument = HydratedDocument<Payment>;
 
@@ -13,6 +14,17 @@ export class Payment {
 
   @Prop({ required: true })
   amount: number;
+
+  @Prop({
+    type: String,
+    enum: Object.values(PaymentMethod),
+    default: PaymentMethod.CASH,
+    required: true,
+  })
+  method: PaymentMethod;
+
+  @Prop({ type: String, required: false, default: null, trim: true })
+  notes: string | null;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   recordedBy: Types.ObjectId;
@@ -28,4 +40,7 @@ export const PaymentSchema = SchemaFactory.createForClass(Payment);
 
 PaymentSchema.index({ invoiceId: 1 });
 PaymentSchema.index({ customerId: 1 });
+PaymentSchema.index({ customerId: 1, createdAt: -1 });
 PaymentSchema.index({ reversedAt: 1 });
+PaymentSchema.index({ method: 1 });
+PaymentSchema.index({ createdAt: -1 });

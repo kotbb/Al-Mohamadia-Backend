@@ -115,9 +115,7 @@ describe('UsersService createAdmin', () => {
         { username: 'newadmin', firstName: 'New', lastName: 'Admin', password: 'password123' },
         actor,
       ),
-    ).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });
 
@@ -239,9 +237,7 @@ describe('UsersService updateUser', () => {
       exec: () => Promise.resolve(null),
     });
 
-    await expect(service.updateUser(validId, { isActive: false }, actor)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(service.updateUser(validId, { isActive: false }, actor)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

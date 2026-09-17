@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
@@ -11,16 +6,10 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { MergeCustomersDto } from './dto/merge-customers.dto';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
-import {
-  CustomerListResponseDto,
-  CustomerResponseDto,
-} from './dto/customer-response.dto';
+import { CustomerListResponseDto, CustomerResponseDto } from './dto/customer-response.dto';
 import { AuditService } from '../audit/audit.service';
-import { Payment, PaymentDocument } from '../sales-invoices/schemas/payment.schema';
-import {
-  SalesInvoice,
-  SalesInvoiceDocument,
-} from '../sales-invoices/schemas/sales-invoice.schema';
+import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
+import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
@@ -267,9 +256,7 @@ export class CustomersService {
       throw new NotFoundException('Target customer not found');
     }
 
-    const sources = await this.customerModel
-      .find({ _id: { $in: dto.sourceIds }, isDeleted: false })
-      .exec();
+    const sources = await this.customerModel.find({ _id: { $in: dto.sourceIds }, isDeleted: false }).exec();
 
     if (sources.length !== dto.sourceIds.length) {
       throw new NotFoundException('One or more source customers were not found');
@@ -389,10 +376,7 @@ export class CustomersService {
 
     if (query.q?.trim()) {
       const escaped = query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { name: { $regex: escaped, $options: 'i' } },
-        { phone: { $regex: escaped, $options: 'i' } },
-      ];
+      filter.$or = [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped, $options: 'i' } }];
     }
 
     return filter;

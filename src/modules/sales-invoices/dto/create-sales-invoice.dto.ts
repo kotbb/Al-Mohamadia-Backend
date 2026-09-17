@@ -12,6 +12,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
 import { SalesInvoiceType } from '../../../shared/enums/sales-invoice-type.enum';
 
 export class CreateSalesInvoiceLineDto {
@@ -69,4 +70,12 @@ export class CreateSalesInvoiceDto {
   @IsNumber()
   @Min(0)
   paid: number;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  paymentNotes?: string;
 }

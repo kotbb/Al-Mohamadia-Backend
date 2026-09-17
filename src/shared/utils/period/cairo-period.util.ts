@@ -60,7 +60,12 @@ export function cairoMidnightUtc(year: number, month: number, day: number): Date
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60_000);
 }
 
-function addCalendarDays(year: number, month: number, day: number, delta: number): {
+function addCalendarDays(
+  year: number,
+  month: number,
+  day: number,
+  delta: number,
+): {
   year: number;
   month: number;
   day: number;

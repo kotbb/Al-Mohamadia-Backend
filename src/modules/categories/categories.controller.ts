@@ -31,7 +31,7 @@ export class CategoriesController {
     return this.categoriesService.findOne(id);
   }
 
-  // PATCH /categories/:id 
+  // PATCH /categories/:id
   @Patch(':id')
   public update(
     @Param('id', ParseObjectIdPipe) id: string,
@@ -41,7 +41,7 @@ export class CategoriesController {
     return this.categoriesService.update(id, dto, user);
   }
 
-  // DELETE /categories/:id 
+  // DELETE /categories/:id
   @Delete(':id')
   public remove(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.categoriesService.softDelete(id, user);

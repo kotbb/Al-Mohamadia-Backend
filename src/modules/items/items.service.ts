@@ -126,7 +126,6 @@ export class ItemsService {
 
   // Update Item
   public async update(id: string, dto: UpdateItemDto, user: AuthUser): Promise<ItemResponseDto> {
-
     const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).populate('categoryId', 'name').exec();
     if (!item) {
       throw new NotFoundException('Item not found');
@@ -233,7 +232,6 @@ export class ItemsService {
 
   // Soft Delete Item
   public async softDelete(id: string, user: AuthUser): Promise<ItemResponseDto> {
-
     const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).populate('categoryId', 'name').exec();
     if (!item) {
       throw new NotFoundException('Item not found');

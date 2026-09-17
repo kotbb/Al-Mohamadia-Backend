@@ -26,11 +26,7 @@ interface ItemSeed {
   reorderThreshold: number;
 }
 
-const CATEGORY_SEEDS: CategorySeed[] = [
-  { name: 'ساده MDF' },
-  { name: 'خشب' },
-  { name: 'PVC' },
-];
+const CATEGORY_SEEDS: CategorySeed[] = [{ name: 'ساده MDF' }, { name: 'خشب' }, { name: 'PVC' }];
 
 const ITEM_SEEDS: ItemSeed[] = [
   {
@@ -92,10 +88,7 @@ const ITEM_SEEDS: ItemSeed[] = [
 
 const DEFAULT_BALADI_WOOD_METER_PRICE = 850;
 
-async function findOrCreateCategory(
-  categoryModel: Model<CategoryDocument>,
-  name: string,
-): Promise<CategoryDocument> {
+async function findOrCreateCategory(categoryModel: Model<CategoryDocument>, name: string): Promise<CategoryDocument> {
   const existing = await categoryModel.findOne({ name, isDeleted: false }).exec();
   if (existing) {
     console.log(`Category already exists: ${name}`);
@@ -111,11 +104,7 @@ async function findOrCreateCategory(
   return created;
 }
 
-async function findOrCreateItem(
-  itemModel: Model<ItemDocument>,
-  seed: ItemSeed,
-  categoryId: string,
-): Promise<void> {
+async function findOrCreateItem(itemModel: Model<ItemDocument>, seed: ItemSeed, categoryId: string): Promise<void> {
   const existing = await itemModel.findOne({ code: seed.code, isDeleted: false }).exec();
   if (existing) {
     console.log(`Item already exists: ${seed.code}`);
@@ -138,10 +127,7 @@ async function findOrCreateItem(
   console.log(`Item created: ${seed.code} — ${seed.name}`);
 }
 
-async function seedSetting(
-  settingModel: Model<SettingDocument>,
-  config: ConfigService,
-): Promise<void> {
+async function seedSetting(settingModel: Model<SettingDocument>, config: ConfigService): Promise<void> {
   const existing = await settingModel.findOne({ key: BALADI_WOOD_METER_PRICE_KEY }).exec();
   if (existing) {
     console.log(`Setting already exists: ${BALADI_WOOD_METER_PRICE_KEY}=${existing.value}`);
