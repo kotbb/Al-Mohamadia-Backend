@@ -16,8 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phase 4 backend is
-> complete** (sales invoices + PDF/WhatsApp share). Frontend Phase 4 is next.
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–6 are
+> complete** (sales invoices, customer payments, purchase invoices, supplier payments).
 
 ---
 
@@ -31,8 +31,9 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
 | 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
+| 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
 
-Phases 6–10 are not implemented on the backend yet.
+Phases 7–10 are not implemented on the backend yet.
 
 ## What this system does
 
@@ -41,10 +42,11 @@ Phases 6–10 are not implemented on the backend yet.
 | **Auth & users**    | Login, refresh, logout; `super_admin` manages admins; `admin` runs the shop  |
 | **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, base reference price *(Phase 2 — live)* |
 | **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, cancel, Arabic PDF + WhatsApp share link *(Phase 4 — live)* |
-| **Payments**        | Payments on new sales + standalone debt payments against customer balance    |
+| **Customer payments** | Payments on new sales + standalone debt payments against customer balance *(Phase 5 — live)* |
 | **Customers**       | CRUD, running مديونية, search, merge duplicates *(Phase 3 — live)*           |
 | **Suppliers**       | CRUD, amount owed, search, merge duplicates *(Phase 3 — live)*               |
-| **Purchases**       | Restock invoices; increase stock and supplier amount owed                    |
+| **Purchases**       | Restock invoices; increase stock and supplier amount owed *(Phase 6 — live)* |
+| **Supplier payments** | Payments on purchases + standalone debt payments to suppliers *(Phase 6 — live)* |
 | **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory value at cost |
 | **Dashboard**       | Today's sales / profit / collected / invoice count, debt totals, charts      |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
@@ -101,8 +103,15 @@ is authoritative.
   reduce `Customer.balance` by `amount`.
 - Saving a sales invoice deducts `Item.stockQuantity` per line; **cancelling**
   reverses stock and reverses the `balance += remaining` applied at save.
-- Saving a purchase invoice increases `Item.stockQuantity` and
-  `Supplier.amountOwed`.
+- Saving a purchase invoice increases `Item.stockQuantity` and increases
+  `Supplier.amountOwed` by `remaining`.
+- On-purchase `SupplierPayment` (`purchaseId` set): history + purchase invoice `paid` /
+  `remaining` only — **does not** change `Supplier.amountOwed` directly (debt was already set to
+  that purchase's `remaining` on save).
+- Standalone `SupplierPayment` (`purchaseId` null, `supplierId` set): **does**
+  reduce `Supplier.amountOwed` by `amount`.
+- Cancelling a purchase invoice reverses stock, reverses `Supplier.amountOwed += remaining`,
+  and voids associated `SupplierPayment` records.
 - Price/cost changes append `ItemPriceHistory` (never silent overwrite).
 - Manual stock corrections go through `StockAdjustment` with a reason.
 - Dimensions (`thickness` × `width` × `length`, cm) are required on sales

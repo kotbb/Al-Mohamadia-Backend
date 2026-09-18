@@ -12,6 +12,7 @@ import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
+import { PurchaseInvoice, PurchaseInvoiceDocument } from '../purchases/schemas/purchase-invoice.schema';
 import { SupplierListFilter } from './types/supplier-list-filter.type';
 
 @Injectable()
@@ -19,6 +20,8 @@ export class SuppliersService {
   constructor(
     @InjectModel(Supplier.name)
     private readonly supplierModel: Model<SupplierDocument>,
+    @InjectModel(PurchaseInvoice.name)
+    private readonly purchaseInvoiceModel: Model<PurchaseInvoiceDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly auditService: AuditService,
   ) {}
@@ -306,6 +309,14 @@ export class SuppliersService {
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const sourceObjectIds = sources.map((source) => source._id);
+
+      await this.purchaseInvoiceModel.updateMany(
+        { supplierId: { $in: sourceObjectIds } },
+        { $set: { supplierId: target._id } },
+        { session },
+      );
+
       for (const source of sources) {
         source.isDeleted = true;
         source.isActive = false;

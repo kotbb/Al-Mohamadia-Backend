@@ -201,9 +201,9 @@ describe('PaymentsService', () => {
         .mockReturnValueOnce(mockQuery(initialCustomer))
         .mockReturnValueOnce(mockQuery(lockedCustomer));
 
-      await expect(
-        service.recordPayment({ customerId, amount: 1500 }, actor),
-      ).rejects.toThrow('Payment amount (1500 ج.م) cannot exceed customer balance (1000 ج.م)');
+      await expect(service.recordPayment({ customerId, amount: 1500 }, actor)).rejects.toThrow(
+        'Payment amount (1500 ج.م) cannot exceed customer balance (1000 ج.م)',
+      );
 
       expect(session.abortTransaction).toHaveBeenCalled();
     });
@@ -325,21 +325,21 @@ describe('PaymentsService', () => {
     });
 
     it('throws BadRequestException when period is set but date is missing', async () => {
-      await expect(
-        service.findAll({ period: SalesInvoicePeriod.DAY } as any),
-      ).rejects.toThrow('date is required when period is set');
+      await expect(service.findAll({ period: SalesInvoicePeriod.DAY } as any)).rejects.toThrow(
+        'date is required when period is set',
+      );
     });
 
     it('throws BadRequestException when date is set but period is missing', async () => {
-      await expect(
-        service.findAll({ date: '2026-09-17' } as any),
-      ).rejects.toThrow('period is required when date is set');
+      await expect(service.findAll({ date: '2026-09-17' } as any)).rejects.toThrow(
+        'period is required when date is set',
+      );
     });
 
     it('throws BadRequestException when invoiceId combined with type=standalone', async () => {
-      await expect(
-        service.findAll({ invoiceId, type: PaymentTypeFilter.STANDALONE }),
-      ).rejects.toThrow('Cannot filter by invoiceId when type is standalone');
+      await expect(service.findAll({ invoiceId, type: PaymentTypeFilter.STANDALONE })).rejects.toThrow(
+        'Cannot filter by invoiceId when type is standalone',
+      );
     });
 
     it('filters by specific invoiceId when type=invoice is provided', async () => {
@@ -367,9 +367,9 @@ describe('PaymentsService', () => {
     });
 
     it('wraps cairoPeriodRange error as BadRequestException', async () => {
-      await expect(
-        service.findAll({ period: SalesInvoicePeriod.DAY, date: 'invalid-date' }),
-      ).rejects.toThrow('Invalid date for period filter');
+      await expect(service.findAll({ period: SalesInvoicePeriod.DAY, date: 'invalid-date' })).rejects.toThrow(
+        'Invalid date for period filter',
+      );
     });
 
     it('totalAmount summary excludes reversed payments when status=all', async () => {
@@ -389,9 +389,7 @@ describe('PaymentsService', () => {
 
       await service.findAll({ status: PaymentStatusFilter.ALL });
 
-      expect(paymentModel.find).toHaveBeenCalledWith(
-        expect.not.objectContaining({ reversedAt: null }),
-      );
+      expect(paymentModel.find).toHaveBeenCalledWith(expect.not.objectContaining({ reversedAt: null }));
       expect(paymentModel.aggregate).toHaveBeenCalledWith([
         { $match: expect.objectContaining({ reversedAt: null }) },
         { $group: { _id: null, totalAmount: { $sum: '$amount' } } },

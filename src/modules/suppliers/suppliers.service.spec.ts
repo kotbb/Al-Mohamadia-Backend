@@ -7,6 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 
+import { PurchaseInvoice } from '../purchases/schemas/purchase-invoice.schema';
+
 describe('SuppliersService', () => {
   let service: SuppliersService;
   let supplierModel: {
@@ -15,6 +17,9 @@ describe('SuppliersService', () => {
     find: jest.Mock;
     countDocuments: jest.Mock;
     aggregate: jest.Mock;
+  };
+  let purchaseInvoiceModel: {
+    updateMany: jest.Mock;
   };
   let auditService: { log: jest.Mock };
   let connection: { startSession: jest.Mock };
@@ -54,6 +59,10 @@ describe('SuppliersService', () => {
       endSession: jest.fn(),
     };
 
+    purchaseInvoiceModel = {
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
+    };
+
     supplierModel = {
       findOne: jest.fn().mockReturnValue({
         lean: () => ({ exec: () => Promise.resolve(null) }),
@@ -82,6 +91,7 @@ describe('SuppliersService', () => {
       providers: [
         SuppliersService,
         { provide: getModelToken(Supplier.name), useValue: supplierModel },
+        { provide: getModelToken(PurchaseInvoice.name), useValue: purchaseInvoiceModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: AuditService, useValue: auditService },
       ],
@@ -203,6 +213,11 @@ describe('SuppliersService', () => {
           }),
         }),
         session,
+      );
+      expect(purchaseInvoiceModel.updateMany).toHaveBeenCalledWith(
+        { supplierId: { $in: [source1._id, source2._id] } },
+        { $set: { supplierId: target._id } },
+        { session },
       );
       expect(result.id).toBe(targetId);
     });

@@ -3,7 +3,9 @@ import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
 export class PaymentResponseDto {
   id: string;
   customerId: string | null;
+  customerName?: string | null;
   invoiceId: string | null;
+  invoiceNumber?: string | null;
   amount: number;
   method: PaymentMethod;
   notes: string | null;

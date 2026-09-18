@@ -5,8 +5,16 @@ import { SuppliersController } from './suppliers.controller';
 import { Supplier, SupplierSchema } from './schemas/supplier.schema';
 import { AuditModule } from '../audit/audit.module';
 
+import { PurchaseInvoice, PurchaseInvoiceSchema } from '../purchases/schemas/purchase-invoice.schema';
+
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Supplier.name, schema: SupplierSchema }]), AuditModule],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Supplier.name, schema: SupplierSchema },
+      { name: PurchaseInvoice.name, schema: PurchaseInvoiceSchema },
+    ]),
+    AuditModule,
+  ],
   controllers: [SuppliersController],
   providers: [SuppliersService],
   exports: [SuppliersService],

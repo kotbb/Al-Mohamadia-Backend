@@ -190,9 +190,10 @@ Module: `src/modules/sales-invoices`.
 - [x] Filterable listing (`GET /payments`) by `customerId`, `invoiceId`, `status`, `type`, `method`, Cairo `period` + `date`
 - [x] Update invoice creation to capture optional `paymentMethod` and `paymentNotes` when `paid > 0`
 
-**Frontend**
-- "Record payment" action from a customer's detail view
-- Payment history per customer
+**Frontend** — *Done*
+- [x] "Record payment" action from a customer's detail view
+- [x] Payment history per customer
+- [x] Dedicated payments list page with filters and total summary
 
 **Done when:** a customer with existing debt can have a partial payment
 recorded from the UI and their balance updates correctly.
@@ -211,19 +212,51 @@ Module: `src/modules/payments`.
 
 ---
 
-## Phase 6 — Purchasing & Restocking
+## Phase 6 — Purchasing & Restocking (including Supplier Payments)
 
-**Backend**
-- `PurchaseInvoice`, `PurchaseInvoiceLine` schemas/module
-- Create purchase (transactional: stock increment + supplier `amountOwed`
-  increment)
+**Backend** — *Done*
 
-**Frontend**
-- New purchase invoice form
-- Purchase invoice list per supplier
+- [x] `PurchaseInvoice`, `PurchaseInvoiceLine` schemas/module
+- [x] Create purchase (transactional: pricing-mode-aware stock increment + supplier `amountOwed += remaining`, on-purchase `SupplierPayment` when `paid > 0`, audit `purchase_created`)
+- [x] Sequential purchase numbering `PUR-NNNN` via `InvoiceCounter`
+- [x] Cancel purchase invoice (transactional: reverses stock + supplier `amountOwed`, voids associated `SupplierPayment` records, status `cancelled`, audit `purchase_cancelled`)
+- [x] List purchase invoices with filters (`supplierId`, `status`, `period` + `date`, `q`) and active summary (`totalAmount`)
+- [x] `SupplierPayment` schema & module (`src/modules/supplier-payments`):
+  - Standalone debt settlement (`POST /supplier-payments`): strict validation `0 < amount <= supplier.amountOwed`, reduces `amountOwed`
+  - Payment cancellation (`POST /supplier-payments/:id/cancel`): restores `amountOwed`, sets `reversedAt` / `reversedBy`, audits `supplier_payment_cancelled`
+  - Filterable list (`GET /supplier-payments`): by `supplierId`, `purchaseId`, `status`, `type`, `method`, Cairo `period` + `date`
+- [x] Supplier merge re-points both `PurchaseInvoice.supplierId` and `SupplierPayment.supplierId` to target in the same transaction
+- [x] Unit test suites covering critical paths, role guards, validation, cancel, and merge re-pointing
+
+**Frontend** — *Done*
+- [x] Dedicated Purchase Invoices list page (`/purchases`) with status/period/search filters, total purchases summary card, and pagination
+- [x] Modal-based new purchase invoice dialog matching customer invoice creation, with supplier picker, item selector with cubic-meter dimension calculation, live totals, and on-purchase payment
+- [x] View-only purchase invoice detail dialog/view with line items and transactional cancellation
+- [x] Dedicated Supplier Payments list page (`/supplier-payments`) with Cairo period/date filters, method filter, supplier search, summary card, and pagination
+- [x] "Record payment" modal action with debtor supplier droplist and live autocomplete search
+- [x] Supplier detail view enhanced with purchase history, payments history, and quick record payment action
+- [x] Customer "Record payment" modal enhanced with debtor customer droplist and live autocomplete search
+- [x] Contextual navigation: "Back to list" returns to originating list (`/payments`, `/supplier-payments`, `/purchases`) via `?from=...` query parameter
+- [x] 3-Hub navigation structure in sidebar and horizontal tab bar: Sales & Customers, Procurement & Suppliers, Inventory & Catalog
+- [x] Complete bilingual Arabic / English translations and responsive token-based styling
 
 **Done when:** a purchase from a supplier increases stock and the
-supplier's owed amount, both visible in the UI immediately.
+supplier's owed amount, supplier payments can be recorded and cancelled, both visible in the UI immediately.
+
+**Backend API** (`/api/v1`, JWT + `admin` | `super_admin`):
+
+| Resource | Endpoints |
+|----------|-----------|
+| Purchases | `POST/GET /purchases`, `GET /purchases/:id`, `POST /purchases/:id/cancel` |
+| Supplier payments | `POST/GET /supplier-payments`, `GET /supplier-payments/:id`, `POST /supplier-payments/:id/cancel` |
+
+List query params (Purchases): `supplierId`, `status`, `period`, `date`, `q`, `page`, `limit`.
+Create body (Purchases): `{ supplierId, lines: [{ itemId, quantity, unitCost, width?, length?, thickness?, note? }], paid?, paymentMethod?, paymentNotes?, notes? }`.
+List query params (Supplier payments): `supplierId`, `purchaseId`, `status`, `type`, `method`, `period`, `date`, `page`, `limit`.
+Create body (Supplier payments): `{ supplierId, amount, method?, notes? }`.
+List response: `{ items, meta, summary: { totalAmount } }`.
+
+Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 
 ---
 
@@ -297,9 +330,9 @@ correctly attributed in the audit log UI.
 | 1 — Auth & Users | Done | Done |
 | 2 — Categories, Items & Pricing | Done | Done |
 | 3 — Customers & Suppliers | Done | Done |
-| 4 — Sales Invoicing | Done | Not started |
-| 5 — Payments | Done | Not started |
-| 6 — Purchasing & Restocking | Not started | Not started |
+| 4 — Sales Invoicing | Done | Done |
+| 5 — Payments | Done | Done |
+| 6 — Purchasing & Restocking | Done | Done |
 | 7 — Inventory Management | Not started | Not started |
 | 8 — Dashboard | Not started | Not started |
 | 9 — Audit Log UI | Not started | Not started |
