@@ -20,10 +20,12 @@ truth for stock, balances, invoices, and history.
 
 - **Auth & users** — login, refresh, logout; `super_admin` manages admins *(Phase 1)*
 - **Catalog & pricing** — categories, items, price history, base reference price *(Phase 2)*
-- **Sales & payments** — cash / customer invoices, debt payments *(planned)*
-- **Customers & suppliers** — balances and amounts owed *(planned)*
-- **Inventory & purchases** — stock, restock invoices *(planned)*
-- **Dashboard & audit** — daily KPIs and a tamper-evident activity feed *(planned)*
+- **Customers & suppliers** — balances (مديونية) and amounts owed, search, merge duplicates *(Phase 3)*
+- **Sales invoicing** — cash / customer invoices, line items, cancel, Arabic PDF & WhatsApp share *(Phase 4)*
+- **Payments** — on-invoice and standalone customer debt payments with cancellation *(Phase 5)*
+- **Purchases & restock** — purchase invoices from suppliers and supplier payments *(Phase 6)*
+- **Inventory management** — live stock, low-stock alerts, manual audit adjustments (جرد), valuation *(Phase 7)*
+- **Dashboard & audit** — daily KPIs and tamper-evident activity feed *(planned)*
 
 ---
 
@@ -71,6 +73,8 @@ npm run test:cov
 ```bash
 npm run seed:super-admin   # first super_admin account
 npm run seed:catalog       # categories, items, base reference price
+npm run seed:parties       # sample customers and suppliers
+npm run seed:invoices      # sample cash & customer sales invoices
 ```
 
 Requires `.env` with `MONGO_URI`. See [`.env.example`](./.env.example).

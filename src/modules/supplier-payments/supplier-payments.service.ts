@@ -10,10 +10,7 @@ import { PaymentStatusFilter } from '../payments/enums/payment-status-filter.enu
 import { PaymentTypeFilter } from '../payments/enums/payment-type-filter.enum';
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
 import { ListSupplierPaymentsQueryDto } from './dto/list-supplier-payments-query.dto';
-import {
-  SupplierPaymentListResponseDto,
-  SupplierPaymentResponseDto,
-} from './dto/supplier-payment-response.dto';
+import { SupplierPaymentListResponseDto, SupplierPaymentResponseDto } from './dto/supplier-payment-response.dto';
 import { RecordSupplierPaymentDto } from './dto/record-supplier-payment.dto';
 import { SupplierPayment, SupplierPaymentDocument } from './schemas/supplier-payment.schema';
 import { SupplierPaymentListFilter } from './types/supplier-payment-list-filter.type';
@@ -30,13 +27,8 @@ export class SupplierPaymentsService {
   ) {}
 
   // Record a standalone debt payment to a supplier
-  public async recordPayment(
-    dto: RecordSupplierPaymentDto,
-    user: AuthUser,
-  ): Promise<SupplierPaymentResponseDto> {
-    const supplier = await this.supplierModel
-      .findOne({ _id: dto.supplierId, isDeleted: false })
-      .exec();
+  public async recordPayment(dto: RecordSupplierPaymentDto, user: AuthUser): Promise<SupplierPaymentResponseDto> {
+    const supplier = await this.supplierModel.findOne({ _id: dto.supplierId, isDeleted: false }).exec();
 
     if (!supplier) {
       throw new NotFoundException('Supplier not found');
@@ -150,7 +142,9 @@ export class SupplierPaymentsService {
     }
 
     if (payment.purchaseInvoiceId !== null) {
-      throw new BadRequestException('Purchase invoice payments can only be cancelled by cancelling the purchase invoice');
+      throw new BadRequestException(
+        'Purchase invoice payments can only be cancelled by cancelling the purchase invoice',
+      );
     }
 
     if (!payment.supplierId) {
@@ -171,10 +165,7 @@ export class SupplierPaymentsService {
       }
 
       // Find supplier (even if inactive/soft-deleted per decision to allow cancellation)
-      const lockedSupplier = await this.supplierModel
-        .findById(lockedPayment.supplierId)
-        .session(session)
-        .exec();
+      const lockedSupplier = await this.supplierModel.findById(lockedPayment.supplierId).session(session).exec();
 
       if (!lockedSupplier) {
         throw new NotFoundException('Associated supplier not found');

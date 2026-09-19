@@ -20,7 +20,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:catalog": "ts-node -r tsconfig-paths/register src/scripts/seed-catalog.ts",
     "seed:parties": "ts-node -r tsconfig-paths/register src/scripts/seed-parties.ts",
-    "seed:invoices": "ts-node -r tsconfig-paths/register src/scripts/seed-invoices.ts"
+    "seed:invoices": "ts-node -r tsconfig-paths/register src/scripts/seed-invoices.ts",
+    "seed:purchases": "ts-node -r tsconfig-paths/register src/scripts/seed-purchases.ts",
+    "seed:inventory": "ts-node -r tsconfig-paths/register src/scripts/seed-inventory.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

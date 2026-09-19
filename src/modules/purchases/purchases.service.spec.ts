@@ -12,6 +12,7 @@ import { InvoiceCounter } from '../sales-invoices/schemas/invoice-counter.schema
 import { Supplier } from '../suppliers/schemas/supplier.schema';
 import { CreatePurchaseInvoiceDto } from './dto/create-purchase-invoice.dto';
 import { ListPurchaseInvoicesQueryDto } from './dto/list-purchase-invoices-query.dto';
+import { SupplierPayment } from '../supplier-payments/schemas/supplier-payment.schema';
 import { PurchasesService } from './purchases.service';
 import { PurchaseInvoice } from './schemas/purchase-invoice.schema';
 
@@ -143,6 +144,11 @@ describe('PurchasesService', () => {
       log: jest.fn().mockResolvedValue(undefined),
     };
 
+    const supplierPaymentModel = {
+      create: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PurchasesService,
@@ -150,6 +156,7 @@ describe('PurchasesService', () => {
         { provide: getModelToken(InvoiceCounter.name), useValue: invoiceCounterModel },
         { provide: getModelToken(Supplier.name), useValue: supplierModel },
         { provide: getModelToken(Item.name), useValue: itemModel },
+        { provide: getModelToken(SupplierPayment.name), useValue: supplierPaymentModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: AuditService, useValue: auditService },
       ],

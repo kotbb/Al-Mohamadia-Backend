@@ -317,6 +317,8 @@ changes — the corresponding `AuditLog` entry for `price_changed` does not
 duplicate `oldValue`/`newValue`; it stores a `refCollection`/`refId`
 pointer back to the specific document here instead (see `AuditLog` below).
 
+**Indexes:** compound `{ itemId: 1, createdAt: -1 }`.
+
 ---
 
 ## StockAdjustment *(immutable)*
@@ -335,6 +337,8 @@ quantity changes — the corresponding `AuditLog` entry for `stock_adjusted`
 does not duplicate `oldQuantity`/`newQuantity`; it stores a
 `refCollection`/`refId` pointer back to the specific document here instead
 (see `AuditLog` below).
+
+**Indexes:** compound `{ itemId: 1, createdAt: -1 }`, index on `{ createdAt: -1 }`.
 
 ---
 

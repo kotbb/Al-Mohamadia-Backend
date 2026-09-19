@@ -10,7 +10,7 @@ implementation that matches this project's architecture and docs.
 
 Read before coding: `docs/OVERVIEW.md`, `docs/DATABASE.md`, and `docs/PHASES.md`.
 The frontend lives in `../Al-Mohamadia-Frontend/` (see its `docs/AGENTS.md` /
-`docs/COLORS.md`). Do not ask the user to re-explain the domain.
+`docs/Design-System.md`). Do not ask the user to re-explain the domain.
 
 When implementing product behavior: follow patterns in `src/modules/` and
 `src/shared/` (as they appear from Phase 0 onward). Prefer simple, robust

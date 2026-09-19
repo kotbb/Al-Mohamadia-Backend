@@ -8,10 +8,7 @@ import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { AuditService } from '../audit/audit.service';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
-import {
-  PaymentListResponseDto,
-  PaymentResponseDto,
-} from './dto/payment-response.dto';
+import { PaymentListResponseDto, PaymentResponseDto } from './dto/payment-response.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { PaymentStatusFilter } from './enums/payment-status-filter.enum';
 import { PaymentTypeFilter } from './enums/payment-type-filter.enum';
@@ -30,13 +27,8 @@ export class PaymentsService {
   ) {}
 
   // Record a standalone debt payment
-  public async recordPayment(
-    dto: RecordPaymentDto,
-    user: AuthUser,
-  ): Promise<PaymentResponseDto> {
-    const customer = await this.customerModel
-      .findOne({ _id: dto.customerId, isDeleted: false })
-      .exec();
+  public async recordPayment(dto: RecordPaymentDto, user: AuthUser): Promise<PaymentResponseDto> {
+    const customer = await this.customerModel.findOne({ _id: dto.customerId, isDeleted: false }).exec();
 
     if (!customer) {
       throw new NotFoundException('Customer not found');

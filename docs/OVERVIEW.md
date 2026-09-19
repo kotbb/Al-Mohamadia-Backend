@@ -16,8 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–6 are
-> complete** (sales invoices, customer payments, purchase invoices, supplier payments).
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–7 are
+> complete** (sales invoices, customer payments, purchase invoices, supplier payments, inventory management).
 
 ---
 
@@ -32,8 +32,9 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 | 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
+| 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, stock adjustments (`GET /inventory/stock`, `GET /inventory/valuation`, `POST/GET /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
 
-Phases 7–10 are not implemented on the backend yet.
+Phases 8–10 are not implemented on the backend yet.
 
 ## What this system does
 
@@ -47,7 +48,7 @@ Phases 7–10 are not implemented on the backend yet.
 | **Suppliers**       | CRUD, amount owed, search, merge duplicates *(Phase 3 — live)*               |
 | **Purchases**       | Restock invoices; increase stock and supplier amount owed *(Phase 6 — live)* |
 | **Supplier payments** | Payments on purchases + standalone debt payments to suppliers *(Phase 6 — live)* |
-| **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory value at cost |
+| **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory valuation at cost & selling *(Phase 7 — live)* |
 | **Dashboard**       | Today's sales / profit / collected / invoice count, debt totals, charts      |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
 
@@ -234,4 +235,4 @@ once those phases land.
 | [AGENTS.md](./AGENTS.md)                                                           | Backend agent rules (transactions, soft delete, audit, business rules) |
 | [DATABASE.md](./DATABASE.md)                                                       | Full Mongo schema and relationships                                    |
 | [PHASES.md](./PHASES.md)                                                           | Phased vertical-slice build plan and status                            |
-| [../../Al-Mohamadia-Frontend/docs/COLORS.md](../../Al-Mohamadia-Frontend/docs/COLORS.md) | Frontend design tokens (UI only)                                       |
+| [../../Al-Mohamadia-Frontend/docs/Design-System.md](../../Al-Mohamadia-Frontend/docs/Design-System.md) | Frontend design tokens (UI only)                                       |
