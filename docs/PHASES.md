@@ -155,7 +155,7 @@ Modules: `src/modules/customers`, `suppliers`.
 - [x] New-invoice modal dialog: customer search-or-cash toggle, multi-line item entry
   with dimension fields shown conditionally for `per_cubic_meter`, live
   totals, discount, paid/remaining
-- [x] Invoice list with filters + search, with primary "فاتورة جديدة" action opening the creation modal
+- [x] Invoice list with filters + search, total sales summary card, and primary "فاتورة جديدة" action opening the creation modal
 - [x] Invoice detail view; Save / Save & Print; PDF export / WhatsApp share
 - [x] Cancel invoice action
 
@@ -171,6 +171,7 @@ reversals.
 | Share & PDF | `GET /sales-invoices/:id/pdf`, `GET /public/sales-invoices/:token/pdf`, `GET /sales-invoices/:id/share` |
 
 List query params: `status`, `period`, `date`, `q`, `page`, `limit`.
+List response: `{ items, meta, summary: { totalAmount } }` (`totalAmount` is saved invoices matching the other filters).
 Create body: `{ customerId?, type, lines: [{ itemId, quantity, piecePrice?, width?, length?, thickness?, note? }], discount?, paid?, paymentMethod?, paymentNotes? }`.
 
 Module: `src/modules/sales-invoices`.
@@ -314,17 +315,33 @@ Module: `src/modules/inventory`.
 
 ## Phase 8 — Dashboard
 
-**Backend**
-- Aggregation endpoints: today's sales / estimated profit / invoice count /
-  collected; total outstanding customer debt + customer count; monthly
-  sales; top-selling items by revenue
+**Backend** — *Done*
 
-**Frontend**
-- Dashboard page: summary cards, monthly sales bar chart, top-selling items,
-  "فاتورة جديدة" quick action shortcut
+- [x] Aggregation endpoint `GET /dashboard`: today's sales (net) / estimated profit / invoice count / collected
+- [x] Live customer debt strip: `totalDebt` + `debtorCount` (`balance > 0`)
+- [x] Period-filterable `salesSeries` (day / week / month / year, Cairo, zero-filled buckets) + top 5 selling items by revenue
+- [x] Defaults to current Cairo month when `period`/`date` omitted; pair-validation matches other list endpoints
+- [x] Unit tests for formulas, defaults, validation, and bucket counts
+
+**Frontend** — *Done*
+
+- [x] Dashboard page on `/`: today KPIs, debt strip, period chart + top sellers
+- [x] Wired to `GET /dashboard`; period filter + New Invoice header shortcut; debt → customers `?hasDebt=1`
 
 **Done when:** dashboard numbers match what you'd compute manually from the
 invoices/payments created in earlier phases.
+
+**Backend API** (`/api/v1`, JWT + `admin` | `super_admin`):
+
+| Resource | Endpoints |
+|----------|-----------|
+| Dashboard | `GET /dashboard` |
+
+Query params (optional pair): `period` (`day` \| `week` \| `month` \| `year`), `date` (`YYYY-MM-DD`). Default: current Cairo month. Applies only to `salesSeries` + `topSellingItems`.
+
+Response: `{ today: { sales, estimatedProfit, invoiceCount, collected }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`.
+
+Module: `src/modules/dashboard`.
 
 ---
 
@@ -368,6 +385,6 @@ correctly attributed in the audit log UI.
 | 5 — Payments | Done | Done |
 | 6 — Purchasing & Restocking | Done | Done |
 | 7 — Inventory Management | Done | Done |
-| 8 — Dashboard | Not started | Not started |
+| 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Not started | Not started |
 | 10 — Polish & Hardening | Not started | Not started |

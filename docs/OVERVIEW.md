@@ -16,8 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–7 are
-> complete** (sales invoices, customer payments, purchase invoices, supplier payments, inventory management).
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–8 backend are
+> complete** (sales invoices, customer payments, purchase invoices, supplier payments, inventory management, dashboard aggregations). Frontend Phase 8 and Phases 9–10 are not done yet.
 
 ---
 
@@ -33,8 +33,9 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 | 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
 | 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, stock adjustments (`GET /inventory/stock`, `GET /inventory/valuation`, `POST/GET /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
+| 8 | Done | `dashboard` — today KPIs, debt strip, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
 
-Phases 8–10 are not implemented on the backend yet.
+Phases 9–10 are not implemented on the backend yet.
 
 ## What this system does
 
@@ -49,7 +50,7 @@ Phases 8–10 are not implemented on the backend yet.
 | **Purchases**       | Restock invoices; increase stock and supplier amount owed *(Phase 6 — live)* |
 | **Supplier payments** | Payments on purchases + standalone debt payments to suppliers *(Phase 6 — live)* |
 | **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory valuation at cost & selling *(Phase 7 — live)* |
-| **Dashboard**       | Today's sales / profit / collected / invoice count, debt totals, charts      |
+| **Dashboard**       | Today's sales / profit / collected / invoice count, debt totals, period chart + top items *(Phase 8 — live)* |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
 
 ---

@@ -18,6 +18,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SupplierPaymentsModule } from './modules/supplier-payments/supplier-payments.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import * as Joi from 'joi';
 
 @Module({
@@ -59,6 +60,7 @@ import * as Joi from 'joi';
     PurchasesModule,
     SupplierPaymentsModule,
     InventoryModule,
+    DashboardModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AppExceptionsHandler },

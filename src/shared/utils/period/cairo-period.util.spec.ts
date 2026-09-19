@@ -1,5 +1,10 @@
 import { SalesInvoicePeriod } from '../../enums/sales-invoice-period.enum';
-import { cairoPeriodRange, formatCairoDate, parseIsoDateParts } from './cairo-period.util';
+import {
+  cairoPeriodBuckets,
+  cairoPeriodRange,
+  formatCairoDate,
+  parseIsoDateParts,
+} from './cairo-period.util';
 
 describe('cairo-period.util', () => {
   it('parses ISO date parts', () => {
@@ -7,6 +12,20 @@ describe('cairo-period.util', () => {
       year: 2026,
       month: 3,
       day: 15,
+    });
+  });
+
+  it('rejects non-existent calendar days', () => {
+    expect(() => parseIsoDateParts('2026-02-31')).toThrow(/Invalid ISO date/);
+    expect(() => parseIsoDateParts('2026-13-01')).toThrow(/Invalid ISO date/);
+    expect(() => parseIsoDateParts('2026-04-31')).toThrow(/Invalid ISO date/);
+  });
+
+  it('accepts valid leap day', () => {
+    expect(parseIsoDateParts('2024-02-29')).toEqual({
+      year: 2024,
+      month: 2,
+      day: 29,
     });
   });
 
@@ -31,5 +50,40 @@ describe('cairo-period.util', () => {
     const year = cairoPeriodRange(SalesInvoicePeriod.YEAR, '2026-03-15');
     expect(formatCairoDate(year.from)).toBe('2026-01-01');
     expect(formatCairoDate(year.to)).toBe('2027-01-01');
+  });
+
+  describe('cairoPeriodBuckets', () => {
+    it('day yields one bucket', () => {
+      const buckets = cairoPeriodBuckets(SalesInvoicePeriod.DAY, '2026-03-15');
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0].bucketStart).toBe('2026-03-15');
+      expect(formatCairoDate(buckets[0].from)).toBe('2026-03-15');
+      expect(formatCairoDate(buckets[0].to)).toBe('2026-03-16');
+    });
+
+    it('week yields 7 daily buckets Sat–Fri', () => {
+      const buckets = cairoPeriodBuckets(SalesInvoicePeriod.WEEK, '2026-03-15');
+      expect(buckets).toHaveLength(7);
+      expect(buckets[0].bucketStart).toBe('2026-03-14');
+      expect(buckets[6].bucketStart).toBe('2026-03-20');
+      expect(formatCairoDate(buckets[6].to)).toBe('2026-03-21');
+    });
+
+    it('month yields one bucket per calendar day', () => {
+      const buckets = cairoPeriodBuckets(SalesInvoicePeriod.MONTH, '2026-03-15');
+      expect(buckets).toHaveLength(31);
+      expect(buckets[0].bucketStart).toBe('2026-03-01');
+      expect(buckets[30].bucketStart).toBe('2026-03-31');
+      expect(formatCairoDate(buckets[30].to)).toBe('2026-04-01');
+    });
+
+    it('year yields 12 monthly buckets', () => {
+      const buckets = cairoPeriodBuckets(SalesInvoicePeriod.YEAR, '2026-03-15');
+      expect(buckets).toHaveLength(12);
+      expect(buckets[0].bucketStart).toBe('2026-01');
+      expect(buckets[11].bucketStart).toBe('2026-12');
+      expect(formatCairoDate(buckets[0].from)).toBe('2026-01-01');
+      expect(formatCairoDate(buckets[11].to)).toBe('2027-01-01');
+    });
   });
 });

@@ -210,14 +210,23 @@ export class SalesInvoicesService {
     const limit = Math.min(query.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
-    const [docs, total] = await Promise.all([
+    const activeFilter = { ...filter, status: SalesInvoiceStatus.SAVED };
+
+    const [docs, total, summaryAgg] = await Promise.all([
       this.salesInvoiceModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
       this.salesInvoiceModel.countDocuments(filter).exec(),
+      this.salesInvoiceModel.aggregate<{ totalAmount: number }>([
+        { $match: activeFilter },
+        { $group: { _id: null, totalAmount: { $sum: '$total' } } },
+      ]),
     ]);
+
+    const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
 
     return {
       items: docs.map((doc) => this.toResponseDto(doc)),
       meta: { page, limit, total },
+      summary: { totalAmount },
     };
   }
 

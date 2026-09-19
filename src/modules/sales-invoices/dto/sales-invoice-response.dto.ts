@@ -29,6 +29,10 @@ export class SalesInvoiceResponseDto {
   updatedAt?: Date;
 }
 
+export class SalesInvoiceListSummaryDto {
+  totalAmount: number;
+}
+
 export class SalesInvoiceListResponseDto {
   items: SalesInvoiceResponseDto[];
   meta: {
@@ -36,4 +40,5 @@ export class SalesInvoiceListResponseDto {
     limit: number;
     total: number;
   };
+  summary: SalesInvoiceListSummaryDto;
 }
