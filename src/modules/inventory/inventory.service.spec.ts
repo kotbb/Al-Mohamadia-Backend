@@ -181,14 +181,14 @@ describe('InventoryService', () => {
         { session },
       );
 
-      // AuditLog contract: action 'stock_adjusted', refCollection 'StockAdjustment', changes null
+      // AuditLog contract: action 'stock_adjusted', refCollection 'StockAdjustment'
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: actor.id,
           action: 'stock_adjusted',
           entityType: 'Item',
           entityId: itemId,
-          changes: null,
+          changes: { stockQuantity: { old: 10, new: 15 } },
           refCollection: 'StockAdjustment',
           refId: adjustmentId,
         }),

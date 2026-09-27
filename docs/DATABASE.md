@@ -402,7 +402,7 @@ truth for each kind of change.
 | Field | Type | Notes |
 |---|---|---|
 | userId | ObjectId → User | |
-| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `setting_changed`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created` |
+| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `setting_changed`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
 | entityType | string | e.g. `SalesInvoice`, `Payment`, `SupplierPayment`, `Item`, `Category`, `Setting`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
 | entityId | ObjectId | polymorphic reference to the affected record |
 | changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff, used only for actions **without** a dedicated history collection (`item_edited`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once (e.g. a customer's `name` and `phone` edited in the same save) |
@@ -419,6 +419,8 @@ truth for each kind of change.
 
 Never updated or deleted; no edit/delete endpoints exist for this
 collection at all — append-only.
+
+**Indexes:** `{ createdAt: -1 }`, `{ userId: 1, createdAt: -1 }`, `{ action: 1, createdAt: -1 }`, `{ entityType: 1, entityId: 1, createdAt: -1 }`. The entity index also serves an `entityType`-only filter as a prefix.
 
 ---
 

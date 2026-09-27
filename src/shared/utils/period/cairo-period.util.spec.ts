@@ -1,5 +1,6 @@
 import { SalesInvoicePeriod } from '../../enums/sales-invoice-period.enum';
 import {
+  cairoInclusiveDateBounds,
   cairoPeriodBuckets,
   cairoPeriodRange,
   formatCairoDate,
@@ -27,6 +28,19 @@ describe('cairo-period.util', () => {
       month: 2,
       day: 29,
     });
+  });
+
+  it('inclusive date bounds cover each Cairo calendar day', () => {
+    const sameDay = cairoInclusiveDateBounds('2026-03-15', '2026-03-15');
+    expect(sameDay.lt!.getTime() - sameDay.gte!.getTime()).toBe(24 * 60 * 60 * 1000);
+    expect(formatCairoDate(sameDay.gte!)).toBe('2026-03-15');
+    expect(formatCairoDate(sameDay.lt!)).toBe('2026-03-16');
+
+    const fromOnly = cairoInclusiveDateBounds('2026-03-15');
+    expect(fromOnly.gte).toEqual(sameDay.gte);
+    expect(fromOnly.lt).toBeUndefined();
+
+    expect(() => cairoInclusiveDateBounds('2026-02-31')).toThrow(/Invalid ISO date/);
   });
 
   it('day range is one Cairo calendar day', () => {

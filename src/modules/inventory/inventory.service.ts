@@ -81,7 +81,9 @@ export class InventoryService {
           action: 'stock_adjusted',
           entityType: 'Item',
           entityId: lockedItem._id.toString(),
-          changes: null,
+          changes: {
+            stockQuantity: { old: oldQuantity, new: newQuantity },
+          },
           refCollection: 'StockAdjustment',
           refId: createdAdjustment._id.toString(),
           summary: `stockQuantity: ${oldQuantity} → ${newQuantity} (${dto.reason.trim()})`,
@@ -150,7 +152,7 @@ export class InventoryService {
     }
 
     const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 20, 100);
+    const limit = Math.min(query.limit ?? 10, 100);
     const skip = (page - 1) * limit;
 
     // Parallel execution: fetch paginated items, count filtered, and aggregate stock KPI counts across baseFilter
@@ -391,7 +393,7 @@ export class InventoryService {
     }
 
     const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 20, 100);
+    const limit = Math.min(query.limit ?? 10, 100);
     const skip = (page - 1) * limit;
 
     const [docs, total] = await Promise.all([

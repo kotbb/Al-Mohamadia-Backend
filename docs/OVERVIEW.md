@@ -16,8 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–8 backend are
-> complete** (sales invoices, customer payments, purchase invoices, supplier payments, inventory management, dashboard aggregations). Frontend Phase 8 and Phases 9–10 are not done yet.
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–9 are
+> complete** on both apps (through the audit log UI). Phase 10 (Polish & Hardening) is next.
 
 ---
 

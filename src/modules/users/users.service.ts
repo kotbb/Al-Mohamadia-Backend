@@ -7,6 +7,7 @@ import { CreateAdminDto } from './dto/create-admin.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
+import { AuditEntityType, UserAuditAction } from '../audit/audit.constants';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { checkMongoId } from '../../shared/utils/check-mongo-id/check-mongo-id.util';
@@ -50,8 +51,8 @@ export class UsersService {
       await this.auditService.log(
         {
           userId: user.id,
-          action: 'admin_created',
-          entityType: 'User',
+          action: UserAuditAction.Created,
+          entityType: AuditEntityType.User,
           entityId: created._id.toString(),
           changes: {
             username: { old: null, new: created.username },
@@ -128,8 +129,8 @@ export class UsersService {
 
     await this.auditService.log({
       userId: actor.id,
-      action: 'admin_updated',
-      entityType: 'User',
+      action: UserAuditAction.Updated,
+      entityType: AuditEntityType.User,
       entityId: user._id.toString(),
       changes: {},
       refCollection: null,
@@ -158,8 +159,8 @@ export class UsersService {
 
     await this.auditService.log({
       userId: actor.id,
-      action: 'admin_deleted',
-      entityType: 'User',
+      action: UserAuditAction.Deleted,
+      entityType: AuditEntityType.User,
       entityId: user._id.toString(),
       changes: {
         isDeleted: { old: false, new: true },

@@ -94,7 +94,7 @@ export class CustomersService {
   public async findAll(query: ListCustomersQueryDto): Promise<CustomerListResponseDto> {
     const filter = this.buildListFilter(query);
     const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 20, 100);
+    const limit = Math.min(query.limit ?? 10, 100);
     const skip = (page - 1) * limit;
 
     const [docs, total, summaryRows] = await Promise.all([

@@ -208,6 +208,7 @@ describe('ItemsService', () => {
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'price_changed',
+          changes: { unitPrice: { old: 100, new: 150 } },
           refCollection: 'ItemPriceHistory',
         }),
         session,

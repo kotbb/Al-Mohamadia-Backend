@@ -92,6 +92,33 @@ function daysSinceSaturday(utcDay: number): number {
   return (utcDay + 1) % 7;
 }
 
+export type CairoDateBounds = {
+  gte?: Date;
+  lt?: Date;
+};
+
+/**
+ * Inclusive Cairo calendar bounds for optional YYYY-MM-DD `from` / `to`.
+ * `gte` is Cairo midnight of `from`. `lt` is Cairo midnight of the day after `to`.
+ * Throws on a non-existent calendar day (for example 2026-02-31).
+ */
+export function cairoInclusiveDateBounds(from?: string, to?: string): CairoDateBounds {
+  const bounds: CairoDateBounds = {};
+
+  if (from) {
+    const start = parseIsoDateParts(from);
+    bounds.gte = cairoMidnightUtc(start.year, start.month, start.day);
+  }
+
+  if (to) {
+    const end = parseIsoDateParts(to);
+    const next = addCalendarDays(end.year, end.month, end.day, 1);
+    bounds.lt = cairoMidnightUtc(next.year, next.month, next.day);
+  }
+
+  return bounds;
+}
+
 /**
  * Returns [from, to) UTC range for a Cairo calendar period containing `isoDate`.
  * Week starts Saturday and ends Friday.

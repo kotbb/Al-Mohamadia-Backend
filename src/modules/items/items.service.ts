@@ -346,7 +346,9 @@ export class ItemsService {
             action: 'price_changed',
             entityType: 'Item',
             entityId: item._id.toString(),
-            changes: null,
+            changes: {
+              [change.field]: { old: change.oldValue, new: change.newValue },
+            },
             refCollection: 'ItemPriceHistory',
             refId: history._id.toString(),
             summary: `${change.field}: ${change.oldValue} → ${change.newValue}`,

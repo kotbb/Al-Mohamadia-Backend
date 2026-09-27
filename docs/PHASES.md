@@ -348,15 +348,30 @@ Module: `src/modules/dashboard`.
 ## Phase 9 — Audit Log UI
 
 **Backend**
-- Query/filter endpoints over `AuditLog` (by user, action, entity, date) —
-  read-only, no mutation endpoints (the collection has been populated since
-  Phase 1)
+- [x] Read-only query/filter over `AuditLog` (populated since Phase 1). No mutation endpoints.
 
 **Frontend**
-- Audit log page with filters
+- [x] Audit log page with filters, plus a history modal from module and record screens
 
 **Done when:** every action performed across Phases 1–8 is visible and
 correctly attributed in the audit log UI.
+
+`price_changed` writes `changes` as `{ unitPrice: { old, new } }` or `{ cost: { old, new } }`. `stock_adjusted` writes `{ stockQuantity: { old, new } }`. The stock reason stays in `summary`.
+
+**Backend API** (`/api/v1`, JWT + `admin` | `super_admin`):
+
+| Resource | Endpoints |
+|----------|-----------|
+| Audit log | `GET /audit-logs` |
+| Actors | `GET /audit-logs/actors` |
+
+Query params on `GET /audit-logs` (all optional, AND-combined): `userId`, `action` (exact string), `entityType`, `entityId`, `from`, `to` (`YYYY-MM-DD`, inclusive Cairo calendar days; `from` after `to` is 400), `page` (default 1), `limit` (default 10, max 100). Sort: `createdAt` descending. Paged list endpoints across the API use the same default `limit` of 10 and max of 100.
+
+Response: `{ items: [{ id, createdAt, user: { id, username }, action, entityType, entityId, summary, changes, refCollection, refId }], meta: { page, limit, total } }`. A missing user document keeps the row with `username: null`.
+
+`GET /audit-logs/actors`: `{ id, username }[]` of distinct users who appear on at least one log, including soft-deleted users. A missing user document is `{ id, username: null }`. Sorted by username ascending, null usernames first. Empty when there are no logs.
+
+Module: `src/modules/audit` (backend).
 
 ---
 
@@ -386,5 +401,5 @@ correctly attributed in the audit log UI.
 | 6 — Purchasing & Restocking | Done | Done |
 | 7 — Inventory Management | Done | Done |
 | 8 — Dashboard | Done | Done |
-| 9 — Audit Log UI | Not started | Not started |
+| 9 — Audit Log UI | Done | Done |
 | 10 — Polish & Hardening | Not started | Not started |
