@@ -83,8 +83,10 @@ string; index on `amountOwed`; compound `name` + `phone`.
 `Payment`; adjusts `StockAdjustment`; changes `ItemPriceHistory`; performs
 `AuditLog` entries; owns many `RefreshToken`.
 
-**Rules:** only `super_admin` can create/deactivate `User` records. There is
-exactly one super admin flow (seeded), not self-registerable.
+**Rules:** only `super_admin` can create, update, and deactivate `User`
+records. That update can set `role` to `admin` or `super_admin`. A super
+admin cannot change their own role. There is exactly one super admin flow
+(seeded), not self-registerable.
 
 ---
 
@@ -148,22 +150,6 @@ non-deleted items.
 
 **Indexes:** partial unique index on `code` where `{ isDeleted: false }`;
 index on `{ categoryId: 1, isDeleted: 1 }`.
-
----
-
-## Setting
-
-Shop-wide configuration values (singleton-style keys).
-
-| Field | Type | Notes |
-|---|---|---|
-| key | string | unique, e.g. `baladi_wood_meter_price` |
-| value | number | EGP amount for the base reference price (سعر متر الخشب البلدي) |
-| createdAt / updatedAt | date | |
-
-**Rules:** `baladi_wood_meter_price` is the system-wide base reference price
-used across pricing screens. Changes are audited via `AuditLog`
-(`setting_changed`).
 
 ---
 
@@ -402,8 +388,8 @@ truth for each kind of change.
 | Field | Type | Notes |
 |---|---|---|
 | userId | ObjectId → User | |
-| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `setting_changed`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
-| entityType | string | e.g. `SalesInvoice`, `Payment`, `SupplierPayment`, `Item`, `Category`, `Setting`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
+| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
+| entityType | string | e.g. `SalesInvoice`, `Payment`, `SupplierPayment`, `Item`, `Category`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
 | entityId | ObjectId | polymorphic reference to the affected record |
 | changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff, used only for actions **without** a dedicated history collection (`item_edited`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once (e.g. a customer's `name` and `phone` edited in the same save) |
 | refCollection | string \| null | *(added)* set for actions **with** a dedicated history collection, e.g. `"ItemPriceHistory"` or `"StockAdjustment"` |

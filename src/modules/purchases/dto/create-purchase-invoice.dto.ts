@@ -7,9 +7,11 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsMoneyAmount } from '../../../shared/utils/round-money/is-money-amount.decorator';
 
 export class CreatePurchaseInvoiceLineDto {
   @IsMongoId()
@@ -21,6 +23,7 @@ export class CreatePurchaseInvoiceLineDto {
 
   @IsNumber()
   @IsPositive()
+  @IsMoneyAmount()
   unitCost: number;
 
   @IsOptional()
@@ -40,6 +43,7 @@ export class CreatePurchaseInvoiceLineDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   note?: string;
 }
 
@@ -56,9 +60,11 @@ export class CreatePurchaseInvoiceDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @IsMoneyAmount()
   paid?: number = 0;
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   notes?: string;
 }

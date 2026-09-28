@@ -95,7 +95,7 @@ Domains (ownership):
 | Area | Module (suggested) | Notes |
 |------|--------------------|-------|
 | Auth / users | `auth`, `users` | JWT + refresh; `super_admin` manages admins |
-| Categories / items / prices | `categories`, `items`, `settings` | `ItemPriceHistory` on price/cost change; `baladi_wood_meter_price` in settings *(Phase 2)* |
+| Categories / items / prices | `categories`, `items` | `ItemPriceHistory` on price/cost change *(Phase 2)* |
 | Customers | `customers` | Balance (مديونية), merge duplicates |
 | Suppliers | `suppliers` | Amount owed |
 | Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, cancel, PDF + public share token / WhatsApp payload |
@@ -135,7 +135,6 @@ Domains (ownership):
 |--------|----------------|
 | `price_changed` | `refCollection: "ItemPriceHistory"` + `refId`; leave `changes` null |
 | `stock_adjusted` | `refCollection: "StockAdjustment"` + `refId`; leave `changes` null |
-| `setting_changed` | Set `changes.value` `{ old, new }`; leave refs null |
 | Soft-delete | Use `*_deleted` (`category_deleted`, `item_deleted`, `customer_deleted`, `supplier_deleted`, …) with `isDeleted` / `isActive` in `changes` — not `*_edited` |
 | Merge | `customer_merged` / `supplier_merged` with `targetId`, `sourceIds[]`, and money fields in `changes` |
 | Other mutations | Set `changes` per-field `{ old, new }`; leave refs null |
@@ -226,8 +225,10 @@ Hard rules — never weaken for convenience.
 - Hash passwords with a modern algorithm (prefer argon2id). Store refresh
   tokens as hashes only.
 - Validate all input with DTOs. Treat body/query as untrusted.
-- Round money to 2 decimals at write time; reject negative paid amounts and
-  impossible remaining states.
+- Client-supplied EGP fields must already be finite amounts with at most 2
+  decimal places (`piecePrice`, `discount`, `paid`, payment `amount`, purchase
+  `unitCost`). Computed totals still round to 2 decimals at write time. Reject
+  negative paid amounts and impossible remaining states.
 - Do not weaken role guards to “make it work.”
 
 ------------------------------------------------------------

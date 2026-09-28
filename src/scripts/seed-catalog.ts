@@ -1,12 +1,9 @@
 import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AppModule } from '../app.module';
 import { Category, CategoryDocument } from '../modules/categories/schemas/category.schema';
 import { Item, ItemDocument } from '../modules/items/schemas/item.schema';
-import { Setting, SettingDocument } from '../modules/settings/schemas/setting.schema';
-import { BALADI_WOOD_METER_PRICE_KEY } from '../modules/settings/constants/setting-keys.constant';
 import { PricingMode } from '../shared/enums/pricing-mode.enum';
 import { roundMoney } from '../shared/utils/round-money/round-money.util';
 
@@ -86,8 +83,6 @@ const ITEM_SEEDS: ItemSeed[] = [
   },
 ];
 
-const DEFAULT_BALADI_WOOD_METER_PRICE = 850;
-
 async function findOrCreateCategory(categoryModel: Model<CategoryDocument>, name: string): Promise<CategoryDocument> {
   const existing = await categoryModel.findOne({ name, isDeleted: false }).exec();
   if (existing) {
@@ -127,37 +122,14 @@ async function findOrCreateItem(itemModel: Model<ItemDocument>, seed: ItemSeed, 
   console.log(`Item created: ${seed.code} — ${seed.name}`);
 }
 
-async function seedSetting(settingModel: Model<SettingDocument>, config: ConfigService): Promise<void> {
-  const existing = await settingModel.findOne({ key: BALADI_WOOD_METER_PRICE_KEY }).exec();
-  if (existing) {
-    console.log(`Setting already exists: ${BALADI_WOOD_METER_PRICE_KEY}=${existing.value}`);
-    return;
-  }
-
-  const rawValue = config.get<string>('SEED_BALADI_WOOD_METER_PRICE');
-  const parsed = rawValue !== undefined ? Number(rawValue) : DEFAULT_BALADI_WOOD_METER_PRICE;
-  if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error('SEED_BALADI_WOOD_METER_PRICE must be a non-negative number when set');
-  }
-
-  const value = roundMoney(parsed);
-  await settingModel.create({
-    key: BALADI_WOOD_METER_PRICE_KEY,
-    value,
-  });
-  console.log(`Setting created: ${BALADI_WOOD_METER_PRICE_KEY}=${value}`);
-}
-
 async function seedCatalog() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
 
   try {
-    const config = app.get(ConfigService);
     const categoryModel = app.get<Model<CategoryDocument>>(getModelToken(Category.name));
     const itemModel = app.get<Model<ItemDocument>>(getModelToken(Item.name));
-    const settingModel = app.get<Model<SettingDocument>>(getModelToken(Setting.name));
 
     const categoryByName = new Map<string, CategoryDocument>();
     for (const { name } of CATEGORY_SEEDS) {
@@ -173,7 +145,6 @@ async function seedCatalog() {
       await findOrCreateItem(itemModel, seed, category._id.toString());
     }
 
-    await seedSetting(settingModel, config);
     console.log('Catalog seed completed.');
   } finally {
     await app.close();

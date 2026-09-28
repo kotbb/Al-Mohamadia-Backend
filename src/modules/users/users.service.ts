@@ -97,28 +97,42 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    if (user.role === UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Cannot modify super admin');
+
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+    if (dto.role !== undefined && dto.role !== user.role) {
+      if (user._id.toString() === actor.id) {
+        throw new ForbiddenException('Cannot change your own role');
+      }
+      changes.role = { old: user.role, new: dto.role };
+      user.role = dto.role;
     }
 
-    if (dto.username && dto.username !== user.username) {
+    if (dto.username !== undefined && dto.username.trim() !== user.username) {
+      const username = dto.username.trim();
       const existing = await this.userModel
-        .findOne({ username: dto.username, isDeleted: false, _id: { $ne: user._id } })
+        .findOne({ username, isDeleted: false, _id: { $ne: user._id } })
         .lean()
         .exec();
       if (existing) {
         throw new ConflictException('Username already exists');
       }
-      user.username = dto.username.trim();
+      changes.username = { old: user.username, new: username };
+      user.username = username;
     }
 
-    if (dto.firstName !== undefined) {
-      user.firstName = dto.firstName.trim();
+    if (dto.firstName !== undefined && dto.firstName.trim() !== user.firstName) {
+      const firstName = dto.firstName.trim();
+      changes.firstName = { old: user.firstName, new: firstName };
+      user.firstName = firstName;
     }
-    if (dto.lastName !== undefined) {
-      user.lastName = dto.lastName.trim();
+    if (dto.lastName !== undefined && dto.lastName.trim() !== user.lastName) {
+      const lastName = dto.lastName.trim();
+      changes.lastName = { old: user.lastName, new: lastName };
+      user.lastName = lastName;
     }
-    if (dto.isActive !== undefined) {
+    if (dto.isActive !== undefined && dto.isActive !== user.isActive) {
+      changes.isActive = { old: user.isActive, new: dto.isActive };
       user.isActive = dto.isActive;
     }
     if (dto.password) {
@@ -132,7 +146,7 @@ export class UsersService {
       action: UserAuditAction.Updated,
       entityType: AuditEntityType.User,
       entityId: user._id.toString(),
-      changes: {},
+      changes,
       refCollection: null,
       refId: null,
       summary: `Admin updated: ${user.username}`,
@@ -145,12 +159,6 @@ export class UsersService {
     const user = await this.userModel.findOne({ _id: id, isDeleted: false }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
-    }
-    if (user.role === UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Cannot delete super admin');
-    }
-    if (user._id.toString() === actor.id) {
-      throw new ForbiddenException('Cannot delete your own account');
     }
 
     user.isDeleted = true;

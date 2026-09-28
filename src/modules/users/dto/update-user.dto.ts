@@ -1,4 +1,5 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { UserRole } from '../../../shared/auth/enums/user-role.enum';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -20,7 +21,10 @@ export class UpdateUserDto {
   @IsBoolean()
   isActive?: boolean;
 
-  /** Optional password change — only validated when provided */
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+
   @IsOptional()
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()

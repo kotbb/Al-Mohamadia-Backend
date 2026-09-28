@@ -8,12 +8,14 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
 import { SalesInvoiceType } from '../../../shared/enums/sales-invoice-type.enum';
+import { IsMoneyAmount } from '../../../shared/utils/round-money/is-money-amount.decorator';
 
 export class CreateSalesInvoiceLineDto {
   @IsMongoId()
@@ -40,10 +42,12 @@ export class CreateSalesInvoiceLineDto {
 
   @IsNumber()
   @Min(0.01)
+  @IsMoneyAmount()
   piecePrice: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   note?: string;
 }
 
@@ -65,10 +69,12 @@ export class CreateSalesInvoiceDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @IsMoneyAmount()
   discount?: number;
 
   @IsNumber()
   @Min(0)
+  @IsMoneyAmount()
   paid: number;
 
   @IsOptional()
@@ -77,5 +83,6 @@ export class CreateSalesInvoiceDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   paymentNotes?: string;
 }

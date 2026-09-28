@@ -239,6 +239,80 @@ describe('UsersService updateUser', () => {
 
     await expect(service.updateUser(validId, { isActive: false }, actor)).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('changes an admin role and records the audit diff', async () => {
+    const doc = {
+      _id: { toString: () => validId },
+      username: 'admin1',
+      firstName: 'A',
+      lastName: 'B',
+      role: UserRole.ADMIN,
+      isActive: true,
+      isDeleted: false,
+      save: jest.fn().mockResolvedValue(undefined),
+      get: () => undefined,
+    };
+    userModel.findOne.mockReturnValue({
+      exec: () => Promise.resolve(doc),
+    });
+
+    const result = await service.updateUser(validId, { role: UserRole.SUPER_ADMIN }, actor);
+
+    expect(doc.role).toBe(UserRole.SUPER_ADMIN);
+    expect(result.role).toBe(UserRole.SUPER_ADMIN);
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin_updated',
+        changes: {
+          role: { old: UserRole.ADMIN, new: UserRole.SUPER_ADMIN },
+        },
+      }),
+    );
+  });
+
+  it('rejects changing your own role', async () => {
+    const doc = {
+      _id: { toString: () => actor.id },
+      username: 'super',
+      firstName: 'A',
+      lastName: 'B',
+      role: UserRole.ADMIN,
+      isActive: true,
+      isDeleted: false,
+      save: jest.fn(),
+      get: () => undefined,
+    };
+    userModel.findOne.mockReturnValue({
+      exec: () => Promise.resolve(doc),
+    });
+
+    await expect(service.updateUser(actor.id, { role: UserRole.SUPER_ADMIN }, actor)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(doc.save).not.toHaveBeenCalled();
+  });
+
+  it('lets a super admin change another super admin role', async () => {
+    const doc = {
+      _id: { toString: () => validId },
+      username: 'super2',
+      firstName: 'A',
+      lastName: 'B',
+      role: UserRole.SUPER_ADMIN,
+      isActive: true,
+      isDeleted: false,
+      save: jest.fn().mockResolvedValue(undefined),
+      get: () => undefined,
+    };
+    userModel.findOne.mockReturnValue({
+      exec: () => Promise.resolve(doc),
+    });
+
+    const result = await service.updateUser(validId, { role: UserRole.ADMIN }, actor);
+
+    expect(result.role).toBe(UserRole.ADMIN);
+    expect(doc.save).toHaveBeenCalled();
+  });
 });
 
 describe('UsersController role metadata', () => {

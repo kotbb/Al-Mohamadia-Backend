@@ -1,16 +1,17 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuditModule } from './modules/audit/audit.module';
 import { AppExceptionsHandler } from './shared/filters/app-exception.filter';
+import { AppThrottlerGuard } from './shared/throttler/app-throttler.guard';
 import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
 import { HealthModule } from './modules/health/health.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { ItemsModule } from './modules/items/items.module';
-import { SettingsModule } from './modules/settings/settings.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { SalesInvoicesModule } from './modules/sales-invoices/sales-invoices.module';
@@ -37,6 +38,10 @@ import * as Joi from 'joi';
         SUPER_ADMIN_USERNAME: Joi.string().optional(),
         SUPER_ADMIN_PASSWORD: Joi.string().optional(),
         PUBLIC_API_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
+        THROTTLE_DISABLED: Joi.boolean().default(false),
+        THROTTLE_AUTH_LIMIT: Joi.number().integer().min(1).default(10),
+        THROTTLE_PUBLIC_PDF_LIMIT: Joi.number().integer().min(1).default(20),
+        THROTTLE_GLOBAL_LIMIT: Joi.number().integer().min(1).default(300),
       }),
     }),
     MongooseModule.forRootAsync({
@@ -44,6 +49,29 @@ import * as Joi from 'joi';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGO_URI'),
+      }),
+    }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'auth',
+            ttl: 60_000,
+            limit: Number(configService.get('THROTTLE_AUTH_LIMIT') ?? 10),
+          },
+          {
+            name: 'publicPdf',
+            ttl: 60_000,
+            limit: Number(configService.get('THROTTLE_PUBLIC_PDF_LIMIT') ?? 20),
+          },
+          {
+            name: 'global',
+            ttl: 60_000,
+            limit: Number(configService.get('THROTTLE_GLOBAL_LIMIT') ?? 300),
+          },
+        ],
       }),
     }),
     AuditModule,
@@ -54,7 +82,6 @@ import * as Joi from 'joi';
     SuppliersModule,
     CategoriesModule,
     ItemsModule,
-    SettingsModule,
     SalesInvoicesModule,
     PaymentsModule,
     PurchasesModule,
@@ -64,6 +91,7 @@ import * as Joi from 'joi';
   ],
   providers: [
     { provide: APP_FILTER, useClass: AppExceptionsHandler },
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
   ],
 })

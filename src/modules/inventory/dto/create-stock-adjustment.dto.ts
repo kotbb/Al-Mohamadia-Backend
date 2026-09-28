@@ -1,4 +1,4 @@
-import { IsMongoId, IsNotEmpty, IsNumber, IsString, MinLength } from 'class-validator';
+import { IsMongoId, IsNotEmpty, IsNumber, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateStockAdjustmentDto {
   @IsMongoId()
@@ -10,5 +10,6 @@ export class CreateStockAdjustmentDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(3)
+  @MaxLength(500)
   reason: string;
 }

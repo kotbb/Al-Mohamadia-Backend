@@ -64,10 +64,9 @@ UI or API routes.
 
 **Backend** — *Done*
 
-- [x] `Category`, `Item`, `ItemPriceHistory`, `Setting` schemas/modules
+- [x] `Category`, `Item`, `ItemPriceHistory` schemas/modules
 - [x] CRUD for categories and items (soft delete; category delete blocked when live items exist)
 - [x] Price/cost update endpoint that appends to `ItemPriceHistory` + audit `price_changed`
-- [x] Base reference price setting (سعر متر الخشب البلدي) via `settings`
 - [x] Dev seed script: `npm run seed:catalog`
 
 **Frontend** — *Done*
@@ -88,9 +87,8 @@ and see it recorded in that item's price history.
 |----------|-----------|
 | Categories | `POST/GET/PATCH/DELETE /categories`, `GET /categories/:id` |
 | Items | `POST/GET/PATCH/DELETE /items`, `GET /items?categoryId&isActive`, `PATCH /items/:id/pricing`, `GET /items/:id/price-history` |
-| Settings | `GET/PUT /settings/base-reference-price` |
 
-Modules: `src/modules/categories`, `items`, `settings`.
+Modules: `src/modules/categories`, `items`.
 
 ---
 
@@ -383,8 +381,7 @@ Module: `src/modules/audit` (backend).
 - Loading / error / empty states everywhere
 - API hardening: rate limiting, input validation edge cases, consistent
   error responses
-- Basic e2e tests for the invoice flow (the money-critical path)
-- Deployment setup (backend + frontend)
+- Deployment setup (backend + frontend) — deferred
 
 ---
 
@@ -402,4 +399,4 @@ Module: `src/modules/audit` (backend).
 | 7 — Inventory Management | Done | Done |
 | 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Done | Done |
-| 10 — Polish & Hardening | Not started | Not started |
+| 10 — Polish & Hardening | Not started | Done |

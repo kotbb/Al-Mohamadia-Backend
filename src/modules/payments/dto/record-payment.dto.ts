@@ -1,5 +1,6 @@
-import { IsEnum, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
+import { IsMoneyAmount } from '../../../shared/utils/round-money/is-money-amount.decorator';
 
 export class RecordPaymentDto {
   @IsMongoId()
@@ -8,6 +9,7 @@ export class RecordPaymentDto {
 
   @IsNumber()
   @Min(0.01)
+  @IsMoneyAmount()
   amount: number;
 
   @IsOptional()
@@ -16,5 +18,6 @@ export class RecordPaymentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   notes?: string;
 }

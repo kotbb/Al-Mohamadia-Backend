@@ -4,6 +4,16 @@ import { Error as MongooseError } from 'mongoose';
 import { MongoServerError } from 'mongodb';
 import { ErrorResponse } from './error-response-interface';
 
+const PUBLIC_SALES_INVOICE_PDF = /^\/api\/v1\/public\/sales-invoices\/[^/?#]+\/pdf(?:\?.*)?$/;
+
+/** Share tokens live in the public PDF path. Logs use a stable route instead. */
+export function redactLogUrl(url: string): string {
+  if (PUBLIC_SALES_INVOICE_PDF.test(url)) {
+    return '/api/v1/public/sales-invoices/:token/pdf';
+  }
+  return url;
+}
+
 @Catch()
 export class AppExceptionsHandler implements ExceptionFilter {
   private readonly logger = new Logger(AppExceptionsHandler.name);
@@ -14,14 +24,16 @@ export class AppExceptionsHandler implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const { status, message, errorCode } = this.resolveException(exception);
+    const logUrl = redactLogUrl(request.url);
+    const logMessage = Array.isArray(message) ? message.join('; ') : message;
 
     if (status >= 500) {
       this.logger.error(
-        `[${request.method}] ${request.url} - ${Array.isArray(message) ? message.join('; ') : message}`,
+        `[${request.method}] ${logUrl} - ${logMessage}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
-      this.logger.warn(`[${request.method}] ${request.url} - ${Array.isArray(message) ? message.join('; ') : message}`);
+      this.logger.warn(`[${request.method}] ${logUrl} - ${logMessage}`);
     }
 
     const body: ErrorResponse = {

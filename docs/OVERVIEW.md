@@ -27,7 +27,7 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 |-------|--------|------------------|
 | 0 | Done | Health (`GET /health`), global envelope, audit writer |
 | 1 | Done | `auth` (login, refresh, logout), `users` (admin CRUD, `GET /users/me`) |
-| 2 | Done | `categories`, `items`, `settings` — see [PHASES.md](./PHASES.md#phase-2--categories-items--pricing) |
+| 2 | Done | `categories`, `items` — see [PHASES.md](./PHASES.md#phase-2--categories-items--pricing) |
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
 | 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
@@ -176,13 +176,12 @@ See [`.env.example`](../.env.example) for the template.
 | `PUBLIC_API_BASE_URL`    | Absolute API origin for WhatsApp/public PDF links (default `http://localhost:3000`) |
 | `SUPER_ADMIN_USERNAME`   | Seed script only (`seed:super-admin`)  |
 | `SUPER_ADMIN_PASSWORD`   | Seed script only (`seed:super-admin`)  |
-| `SEED_BALADI_WOOD_METER_PRICE` | Optional override for `seed:catalog` (default `850`) |
 
 ### Seed scripts (development)
 
 ```bash
 npm run seed:super-admin   # first super_admin (requires SUPER_ADMIN_* in .env)
-npm run seed:catalog       # categories, sample items, baladi_wood_meter_price setting
+npm run seed:catalog       # categories and sample items
 npm run seed:parties       # sample customers and suppliers (some with opening balances)
 npm run seed:invoices      # sample cash + customer sales invoices (requires catalog + parties + user)
 ```
