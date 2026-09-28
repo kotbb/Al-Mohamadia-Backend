@@ -301,7 +301,7 @@ low-stock warnings reflect real thresholds.
 |----------|-----------|
 | Stock List | `GET /inventory/stock` |
 | Inventory Valuation | `GET /inventory/valuation` |
-| Stock Adjustments | `POST /inventory/adjustments`, `GET /inventory/adjustments`, `GET /inventory/adjustments/:id` |
+| Stock Adjustments | `POST /inventory/adjustments` (history is `stock_adjusted` on the audit log) |
 
 List query params (Stock): `categoryId`, `stockStatus`, `q`, `page`, `limit`.
 List query params (Adjustments): `itemId`, `period`, `date`, `page`, `limit`.
@@ -354,7 +354,7 @@ Module: `src/modules/dashboard`.
 **Done when:** every action performed across Phases 1–8 is visible and
 correctly attributed in the audit log UI.
 
-`price_changed` writes `changes` as `{ unitPrice: { old, new } }` or `{ cost: { old, new } }`. `stock_adjusted` writes `{ stockQuantity: { old, new } }`. The stock reason stays in `summary`.
+`price_changed` writes `changes` as `{ unitPrice: { old, new } }` or `{ cost: { old, new } }`. `stock_adjusted` writes `{ stockQuantity: { old, new }, reason: { old: null, new } }` and names the item in `summary`.
 
 **Backend API** (`/api/v1`, JWT + `admin` | `super_admin`):
 
@@ -381,7 +381,12 @@ Module: `src/modules/audit` (backend).
 - Loading / error / empty states everywhere
 - API hardening: rate limiting, input validation edge cases, consistent
   error responses
-- Deployment setup (backend + frontend) — deferred
+- One in-process sales-invoice PDF at a time (HTTP 429 when a print is
+  already running). Chromium comes from the local Puppeteer install, the
+  Docker `chromium` binary, or `@sparticuz/chromium` on Vercel.
+- Preview deploy: personal Vercel Hobby (one project per repo, hosts from
+  env) and portable Compose. Compose reads each repo's `.env`. On Vercel,
+  `MONGO_URI` ends in `/prod`.
 
 ---
 
@@ -399,4 +404,4 @@ Module: `src/modules/audit` (backend).
 | 7 — Inventory Management | Done | Done |
 | 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Done | Done |
-| 10 — Polish & Hardening | Not started | Done |
+| 10 — Polish & Hardening | Done | Done |

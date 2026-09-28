@@ -69,7 +69,7 @@ export class SalesInvoicesService {
     const itemById = new Map(items.map((item) => [item._id.toString(), item]));
     for (const item of items) {
       if (!item.isActive) {
-        throw new BadRequestException(`Item is inactive: ${item.code}`);
+        throw new BadRequestException(`Item is inactive: ${item.name}`);
       }
     }
 
@@ -169,10 +169,7 @@ export class SalesInvoicesService {
           changes: {
             invoiceNumber: { old: null, new: created.invoiceNumber },
             type: { old: null, new: created.type },
-            customerId: {
-              old: null,
-              new: customerId ? customerId.toString() : null,
-            },
+            customerId: { old: null, new: customer?.name ?? null },
             total: { old: null, new: created.total },
             discount: { old: null, new: created.discount },
             paid: { old: null, new: created.paid },
@@ -395,7 +392,7 @@ export class SalesInvoicesService {
       customerPhone,
       lines: invoice.lines.map((line) => {
         const item = itemById.get(line.itemId.toString());
-        const itemLabel = item ? `${item.name} (${item.code})` : line.itemId.toString();
+        const itemLabel = item?.name ?? 'Item';
         return {
           itemLabel,
           quantity: line.quantity,
@@ -425,10 +422,10 @@ export class SalesInvoicesService {
     const isCubic = item.pricingMode === PricingMode.PER_CUBIC_METER;
     if (isCubic) {
       if (lineDto.thickness === undefined || lineDto.width === undefined || lineDto.length === undefined) {
-        throw new BadRequestException(`Dimensions are required for cubic-meter item: ${item.code}`);
+        throw new BadRequestException(`Dimensions are required for cubic-meter item: ${item.name}`);
       }
       if (lineDto.thickness <= 0 || lineDto.width <= 0 || lineDto.length <= 0) {
-        throw new BadRequestException(`Dimensions must be greater than 0 for item: ${item.code}`);
+        throw new BadRequestException(`Dimensions must be greater than 0 for item: ${item.name}`);
       }
     }
 

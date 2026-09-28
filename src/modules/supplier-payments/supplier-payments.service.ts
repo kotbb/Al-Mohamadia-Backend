@@ -108,7 +108,7 @@ export class SupplierPaymentsService {
           entityType: 'SupplierPayment',
           entityId: createdPayment._id.toString(),
           changes: {
-            supplierId: { old: null, new: lockedSupplier._id.toString() },
+            supplierId: { old: null, new: lockedSupplier.name },
             amount: { old: null, new: amount },
             method: { old: null, new: createdPayment.method },
             amountOwed: { old: oldAmountOwed, new: newAmountOwed },
@@ -189,7 +189,7 @@ export class SupplierPaymentsService {
           entityId: lockedPayment._id.toString(),
           changes: {
             reversedAt: { old: null, new: now },
-            reversedBy: { old: null, new: user.id },
+            reversedBy: { old: null, new: user.username },
             amountOwed: { old: oldAmountOwed, new: newAmountOwed },
           },
           refCollection: null,

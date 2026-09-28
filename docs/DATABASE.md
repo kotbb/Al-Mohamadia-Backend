@@ -13,7 +13,7 @@ schema changes.
 - **Soft delete** (`isDeleted: boolean`, default `false`) + `isActive` on
   mutable master data: `Category`, `Customer`, `Supplier`, `User`, `Item`.
 - **Immutable / append-only, never updated or deleted**: `ItemPriceHistory`,
-  `StockAdjustment`, `AuditLog`.
+  `AuditLog`.
 - **Hard deleted**: `RefreshToken` only — on logout, expiry, or rotation.
 - Money fields are plain numbers in EGP (ج.م). Round to 2 decimals at write
   time; never trust client-computed totals — recompute server-side.
@@ -80,7 +80,7 @@ string; index on `amountOwed`; compound `name` + `phone`.
 | createdAt / updatedAt | date | |
 
 **Relationships:** creates `SalesInvoice`, `PurchaseInvoice`; records
-`Payment`; adjusts `StockAdjustment`; changes `ItemPriceHistory`; performs
+`Payment`; adjusts item stock (recorded on `AuditLog`); changes `ItemPriceHistory`; performs
 `AuditLog` entries; owns many `RefreshToken`.
 
 **Rules:** only `super_admin` can create, update, and deactivate `User`
@@ -140,12 +140,14 @@ when a new one is issued).
 | createdAt / updatedAt | date | |
 
 **Relationships:** belongs to `Category`; referenced by
-`SalesInvoiceLine`, `PurchaseInvoiceLine`; has many `ItemPriceHistory`,
-`StockAdjustment`.
+`SalesInvoiceLine`, `PurchaseInvoiceLine`; has many `ItemPriceHistory`.
+Manual stock corrections are `stock_adjusted` rows on `AuditLog`.
 
 **Rules:** `unitPrice`/`cost` changes must append an `ItemPriceHistory`
-entry, never a silent overwrite. `stockQuantity` may be set on create only;
-later changes go through `StockAdjustment` (Phase 7). `code` is unique among
+entry, never a silent overwrite. `stockQuantity` may be set on create.
+Later manual corrections go through `POST /inventory/adjustments` and are
+stored on `AuditLog` (`stockQuantity` and `reason` in `changes`). Sales and
+purchases change stock on their own documents. `code` is unique among
 non-deleted items.
 
 **Indexes:** partial unique index on `code` where `{ isDeleted: false }`;
@@ -307,27 +309,6 @@ pointer back to the specific document here instead (see `AuditLog` below).
 
 ---
 
-## StockAdjustment *(immutable)*
-
-| Field | Type | Notes |
-|---|---|---|
-| itemId | ObjectId → Item | |
-| oldQuantity | number | |
-| newQuantity | number | |
-| reason | string | e.g. manual جرد correction |
-| adjustedBy | ObjectId → User | |
-| createdAt | date | |
-
-Never updated or deleted. This is the **source of truth** for stock
-quantity changes — the corresponding `AuditLog` entry for `stock_adjusted`
-does not duplicate `oldQuantity`/`newQuantity`; it stores a
-`refCollection`/`refId` pointer back to the specific document here instead
-(see `AuditLog` below).
-
-**Indexes:** compound `{ itemId: 1, createdAt: -1 }`, index on `{ createdAt: -1 }`.
-
----
-
 ## PurchaseInvoice
 
 | Field | Type | Notes |
@@ -379,11 +360,10 @@ does not duplicate `oldQuantity`/`newQuantity`; it stores a
 ## AuditLog *(immutable, read-only)*
 
 `AuditLog` is a **unified activity feed** — who did what, to what, when —
-across the whole system. It is not the storage location for every diff:
-where a dedicated, structured history collection already exists for an
-action (`ItemPriceHistory`, `StockAdjustment`), `AuditLog` points to that
-record instead of duplicating its values, so there is exactly one source of
-truth for each kind of change.
+across the whole system. Price and cost history stays on `ItemPriceHistory`,
+and `price_changed` points at that document. A manual stock adjustment is
+stored on the audit row itself: `changes.stockQuantity` and `changes.reason`,
+with the item name in `summary`.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -391,15 +371,15 @@ truth for each kind of change.
 | action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
 | entityType | string | e.g. `SalesInvoice`, `Payment`, `SupplierPayment`, `Item`, `Category`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
 | entityId | ObjectId | polymorphic reference to the affected record |
-| changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff, used only for actions **without** a dedicated history collection (`item_edited`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once (e.g. a customer's `name` and `phone` edited in the same save) |
-| refCollection | string \| null | *(added)* set for actions **with** a dedicated history collection, e.g. `"ItemPriceHistory"` or `"StockAdjustment"` |
+| changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff (`item_edited`, `stock_adjusted`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once |
+| refCollection | string \| null | *(added)* set when a dedicated history collection holds the values, e.g. `"ItemPriceHistory"` for `price_changed` |
 | refId | ObjectId \| null | *(added)* points to the specific document in `refCollection` that holds the actual old/new values |
 | summary | string \| null | *(added)* optional precomputed human-readable one-liner (e.g. `"unitPrice: 120 → 135 ج.م"`) so the audit log list view can render something useful without joining to `refCollection`/`refId` on every row |
 | createdAt | date | |
 
 **Rule of thumb when writing an entry:**
 - `price_changed` → set `refCollection: "ItemPriceHistory"` + `refId`, leave `changes` null.
-- `stock_adjusted` → set `refCollection: "StockAdjustment"` + `refId`, leave `changes` null.
+- `stock_adjusted` → set `changes.stockQuantity` and `changes.reason`, put the item name in `summary`, leave `refCollection`/`refId` null.
 - soft-delete → action `*_deleted` (not `*_edited`) with `isDeleted` / `isActive` in `changes`.
 - everything else → set `changes` with the per-field diff, leave `refCollection`/`refId` null.
 
@@ -421,16 +401,14 @@ collection at all — append-only.
 | User | SalesInvoice / PurchaseInvoice | 1 → many (creates) |
 | User | AuditLog | 1 → many (performs) |
 | User | Payment / SupplierPayment | 1 → many (records) |
-| User | StockAdjustment | 1 → many (adjusts) |
 | User | ItemPriceHistory | 1 → many (changes) |
 | User | RefreshToken | 1 → many |
 | Category | Item | 1 → many |
 | Item | SalesInvoiceLine / PurchaseInvoiceLine | 1 → many |
-| Item | ItemPriceHistory / StockAdjustment | 1 → many |
+| Item | ItemPriceHistory | 1 → many |
 | SalesInvoice | SalesInvoiceLine | 1 → many (embedded) |
 | SalesInvoice | Payment | 1 → many |
 | PurchaseInvoice | PurchaseInvoiceLine | 1 → many (embedded) |
 | PurchaseInvoice | SupplierPayment | 1 → many |
 | ItemPriceHistory | AuditLog | 1 → 1 (referenced via `refCollection`/`refId`) |
-| StockAdjustment | AuditLog | 1 → 1 (referenced via `refCollection`/`refId`) |
 | InvoiceCounter | SalesInvoice / PurchaseInvoice | supplies sequential numbers |

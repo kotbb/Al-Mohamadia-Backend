@@ -1,9 +1,9 @@
 import { NestFactory } from '@nestjs/core';
-import { getModelToken } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import { AppModule } from '../app.module';
 import { Category, CategoryDocument } from '../modules/categories/schemas/category.schema';
-import { StockAdjustment, StockAdjustmentDocument } from '../modules/inventory/schemas/stock-adjustment.schema';
+import { InventoryService } from '../modules/inventory/inventory.service';
 import { Item, ItemDocument } from '../modules/items/schemas/item.schema';
 import { User, UserDocument } from '../modules/users/schemas/user.schema';
 import { PricingMode } from '../shared/enums/pricing-mode.enum';
@@ -65,8 +65,9 @@ async function seedInventory() {
   try {
     const itemModel = app.get<Model<ItemDocument>>(getModelToken(Item.name));
     const categoryModel = app.get<Model<CategoryDocument>>(getModelToken(Category.name));
-    const stockAdjustmentModel = app.get<Model<StockAdjustmentDocument>>(getModelToken(StockAdjustment.name));
     const userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
+    const connection = app.get<Connection>(getConnectionToken());
+    const inventoryService = app.get(InventoryService);
 
     const user = await userModel.findOne({ isDeleted: false }).exec();
     if (!user) {
@@ -101,27 +102,32 @@ async function seedInventory() {
       }
     }
 
-    // 2. Seed realistic manual StockAdjustment records
+    // 2. Seed one manual stock adjustment as an audit row
     let targetItem = await itemModel.findOne({ code: 'MDF-18', isDeleted: false }).exec();
     if (!targetItem) {
       targetItem = await itemModel.findOne({ isDeleted: false }).exec();
     }
     if (targetItem) {
-      const existingAdjustment = await stockAdjustmentModel.findOne({ itemId: targetItem._id }).exec();
+      const existingAdjustment = await connection.collection('auditlogs').findOne({
+        entityId: targetItem._id,
+        action: 'stock_adjusted',
+      });
       if (!existingAdjustment) {
         const oldQty = targetItem.stockQuantity;
-        const newQty = oldQty + 2; // e.g. counted 2 extra boards during audit
+        const newQty = roundMoney(oldQty + 2);
 
-        await stockAdjustmentModel.create({
-          itemId: targetItem._id,
-          oldQuantity: oldQty,
-          newQuantity: newQty,
-          reason: 'جرد فعلي سنوي في المخزن الرئيسي وتم تصحيح الرصيد بعد الفرز',
-          adjustedBy: user._id,
-        });
-
-        targetItem.stockQuantity = newQty;
-        await targetItem.save();
+        await inventoryService.adjustStock(
+          {
+            itemId: targetItem._id.toString(),
+            newQuantity: newQty,
+            reason: 'جرد فعلي سنوي في المخزن الرئيسي وتم تصحيح الرصيد بعد الفرز',
+          },
+          {
+            id: user._id.toString(),
+            username: user.username,
+            role: user.role,
+          },
+        );
 
         console.log(`Created sample stock adjustment for ${targetItem.code}: ${oldQty} → ${newQty}`);
       } else {

@@ -16,8 +16,8 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
-> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–9 are
-> complete** on both apps (through the audit log UI). Phase 10 (Polish & Hardening) is next.
+> [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–10 are
+> complete** on both apps.
 
 ---
 
@@ -32,10 +32,10 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 | 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
-| 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, stock adjustments (`GET /inventory/stock`, `GET /inventory/valuation`, `POST/GET /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
+| 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, manual stock adjustments recorded on the audit log (`GET /inventory/stock`, `GET /inventory/valuation`, `POST /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
 | 8 | Done | `dashboard` — today KPIs, debt strip, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
-
-Phases 9–10 are not implemented on the backend yet.
+| 9 | Done | `audit` — append-only log list and actor filter — see [PHASES.md](./PHASES.md#phase-9--audit-log-ui) |
+| 10 | Done | Rate limits, money validation, error envelope, preview deploy — see [PHASES.md](./PHASES.md#phase-10--polish--hardening) |
 
 ## What this system does
 
@@ -74,8 +74,7 @@ No public website webhooks, mobile apps, or multi-tenant headers in MVP.
   `lineTotal`, price snapshots) — **recompute server-side**
 - Mutations that touch more than one collection run in a **Mongo transaction**
 - Soft delete (`isDeleted` / `isActive`) on `Category`, `Customer`,
-  `Supplier`, `User`, `Item`. `ItemPriceHistory`, `StockAdjustment`, and
-  `AuditLog` are
+  `Supplier`, `User`, `Item`. `ItemPriceHistory` and `AuditLog` are
   append-only. `RefreshToken` is hard-deleted on logout / expiry / rotation
 - Roles: `super_admin` only for user-management endpoints; `admin` (and
   `super_admin`) for everything else
@@ -115,7 +114,8 @@ is authoritative.
 - Cancelling a purchase invoice reverses stock, reverses `Supplier.amountOwed += remaining`,
   and voids associated `SupplierPayment` records.
 - Price/cost changes append `ItemPriceHistory` (never silent overwrite).
-- Manual stock corrections go through `StockAdjustment` with a reason.
+- Manual stock corrections update `Item.stockQuantity` and write
+  `stock_adjusted` on `AuditLog` with the quantity and the reason.
 - Dimensions (`thickness` × `width` × `length`, cm) are required on sales
   lines only when the item `pricingMode` is `per_cubic_meter`.
 
@@ -127,7 +127,7 @@ of every diff:
 | Action           | Storage                                                    |
 | ---------------- | ---------------------------------------------------------- |
 | `price_changed`  | Pointer via `refCollection` / `refId` → `ItemPriceHistory` |
-| `stock_adjusted` | Pointer via `refCollection` / `refId` → `StockAdjustment`  |
+| `stock_adjusted` | `changes.stockQuantity` and `changes.reason` on the audit entry |
 | Other edits      | `changes` per-field `{ old, new }` on the audit entry      |
 
 Write the audit entry in the **same transaction** as the mutation. See
@@ -139,8 +139,7 @@ Write the audit entry in the **same transaction** as the mutation. See
 User (super_admin | admin) → RefreshToken
 
 Category → Item
-  ├── ItemPriceHistory
-  └── StockAdjustment
+  └── ItemPriceHistory
 
 Customer
   ├── SalesInvoice → SalesInvoiceLine (+ Payment)
@@ -174,6 +173,7 @@ See [`.env.example`](../.env.example) for the template.
 | `JWT_ACCESS_EXPIRES_IN`  | e.g. `10m` (Phase 1)                   |
 | `JWT_REFRESH_EXPIRES_IN` | e.g. `21d` (Phase 1)                   |
 | `PUBLIC_API_BASE_URL`    | Absolute API origin for WhatsApp/public PDF links (default `http://localhost:3000`) |
+| `CORS_ORIGIN`            | Comma-separated browser origins (default `http://localhost:3001`) |
 | `SUPER_ADMIN_USERNAME`   | Seed script only (`seed:super-admin`)  |
 | `SUPER_ADMIN_PASSWORD`   | Seed script only (`seed:super-admin`)  |
 
@@ -203,6 +203,64 @@ API default: `http://localhost:3000` under `/api/v1`.
 
 If the frontend also wants port `3000`, run Next on another port (e.g.
 `3001`) — see [Al-Mohamadia-Frontend OVERVIEW](../../Al-Mohamadia-Frontend/docs/OVERVIEW.md).
+
+### Preview deploy
+
+Personal Vercel Hobby preview, plus a portable Compose stack. No
+`*.vercel.app` host is hardcoded; both apps read hosts from the environment.
+`npm run start:dev` and Docker Compose both read `Al-Mohamadia-Backend/.env`.
+On Vercel, set `MONGO_URI` to the Atlas URI ending in `/prod`.
+
+Import each GitHub repo as its own Vercel project. Set
+`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` in the backend project's dashboard (it is
+not committed). `vercel.json` runs the Nest entry `src/main.ts` at 2048 MB
+with a 300 second limit.
+
+Backend environment:
+
+| Variable | Value |
+| --- | --- |
+| `CORS_ORIGIN` | Frontend origin. Comma-separate more than one. |
+| `PUBLIC_API_BASE_URL` | Backend origin, without `/api/v1` |
+| `MONGO_URI` | Atlas URI ending in `/prod` |
+| `JWT_ACCESS_SECRET` | Access token signing secret |
+| `JWT_REFRESH_SECRET` | Refresh token signing secret |
+| `VERCEL_SUPPORT_LARGE_FUNCTIONS` | `1` |
+
+Frontend environment:
+
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | Backend origin including `/api/v1` |
+
+`NEXT_PUBLIC_API_URL` is baked in at build time. After changing it, redeploy
+the frontend.
+
+Seed the empty `prod` database once. Point `MONGO_URI` at that URI (do not
+reuse the dev `.env`, which points at `test`), then run:
+
+```bash
+npm run seed:super-admin
+npm run seed:catalog
+npm run seed:parties
+npm run seed:invoices
+npm run seed:purchases
+npm run seed:inventory
+```
+
+Compose lives in this repo and builds the sibling
+`../Al-Mohamadia-Frontend` checkout. There is no Mongo container. The API
+container reads `Al-Mohamadia-Backend/.env` (`MONGO_URI`, JWT secrets,
+`CORS_ORIGIN`, `PUBLIC_API_BASE_URL`). The frontend image reads
+`Al-Mohamadia-Frontend/.env` while it builds, including
+`NEXT_PUBLIC_API_URL`. Change that value, then rebuild the frontend image.
+
+```bash
+docker compose up --build
+```
+
+The API is published on port `3000`. The frontend is published on host port
+`3001`.
 
 ---
 

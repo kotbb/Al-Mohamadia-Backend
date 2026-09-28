@@ -101,7 +101,7 @@ Domains (ownership):
 | Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, cancel, PDF + public share token / WhatsApp payload |
 | Payments | `payments` | On-invoice + standalone debt payments |
 | Purchases | `purchases` | Restock; stock + supplier owed |
-| Inventory | `inventory` | Stock list, جرد / `StockAdjustment`, valuation |
+| Inventory | `inventory` | Stock list, manual جرد recorded on `AuditLog`, valuation |
 | Dashboard | `dashboard` | Aggregations only |
 | Audit | `audit` | Append-only writer + read API (Phase 9 UI) |
 
@@ -134,7 +134,7 @@ Domains (ownership):
 | Action | How to record |
 |--------|----------------|
 | `price_changed` | `refCollection: "ItemPriceHistory"` + `refId`; leave `changes` null |
-| `stock_adjusted` | `refCollection: "StockAdjustment"` + `refId`; leave `changes` null |
+| `stock_adjusted` | `changes.stockQuantity` and `changes.reason`; `summary` names the item; leave refs null |
 | Soft-delete | Use `*_deleted` (`category_deleted`, `item_deleted`, `customer_deleted`, `supplier_deleted`, …) with `isDeleted` / `isActive` in `changes` — not `*_edited` |
 | Merge | `customer_merged` / `supplier_merged` with `targetId`, `sourceIds[]`, and money fields in `changes` |
 | Other mutations | Set `changes` per-field `{ old, new }`; leave refs null |
@@ -147,7 +147,7 @@ See [`DATABASE.md`](./DATABASE.md).
 | Kind | Collections | Rule |
 |------|-------------|------|
 | Soft-deletable | `Category`, `Customer`, `Supplier`, `User`, `Item` | `isDeleted` / `isActive` — never hard delete |
-| Append-only | `ItemPriceHistory`, `StockAdjustment`, `AuditLog` | No update/delete endpoints |
+| Append-only | `ItemPriceHistory`, `AuditLog` | No update/delete endpoints |
 | Hard-deleted | `RefreshToken` | Logout, expiry cleanup, rotation only |
 
 ## Where to look first
@@ -198,8 +198,9 @@ Hard rules — never weaken for convenience.
 - Saving a purchase invoice increases `Item.stockQuantity` and
   `Supplier.amountOwed`.
 - Price/cost changes append `ItemPriceHistory` — never silent overwrite.
-- Manual stock corrections go through `StockAdjustment` with a reason —
-  never a bare field update.
+- Manual stock corrections call `POST /inventory/adjustments`, which updates
+  `Item.stockQuantity` and writes `stock_adjusted` on `AuditLog` with the
+  reason. Never a bare field update.
 - Dimensions (`thickness` × `width` × `length`, cm) are required on sales
   lines only when item `pricingMode` is `per_cubic_meter`.
   - Volume m³ = `(T × W × L) / 1_000_000` (6 dp).

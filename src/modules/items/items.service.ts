@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { Item, ItemDocument } from './schemas/item.schema';
 import { ItemPriceHistory, ItemPriceHistoryDocument } from './schemas/item-price-history.schema';
 import { CreateItemDto } from './dto/create-item.dto';
@@ -67,9 +67,8 @@ export class ItemsService {
           entityType: 'Item',
           entityId: created._id.toString(),
           changes: {
-            code: { old: null, new: created.code },
             name: { old: null, new: created.name },
-            categoryId: { old: null, new: dto.categoryId },
+            categoryId: { old: null, new: category.name },
             pricingMode: { old: null, new: created.pricingMode },
             unitPrice: { old: null, new: created.unitPrice },
             cost: { old: null, new: created.cost },
@@ -77,7 +76,7 @@ export class ItemsService {
           },
           refCollection: null,
           refId: null,
-          summary: `Item created: ${created.code} — ${created.name}`,
+          summary: `Item created: ${created.name}`,
         },
         session,
       );
@@ -147,7 +146,6 @@ export class ItemsService {
         if (existing) {
           throw new ConflictException('Item code already exists');
         }
-        changes.code = { old: item.code, new: trimmedCode };
         item.code = trimmedCode;
       }
     }
@@ -166,9 +164,12 @@ export class ItemsService {
       if (!category) {
         throw new NotFoundException('Category not found');
       }
-      const oldCategoryId = item.categoryId.toString();
+      const oldCategoryId = categoryRefId(item.categoryId);
       if (oldCategoryId !== dto.categoryId) {
-        changes.categoryId = { old: oldCategoryId, new: dto.categoryId };
+        changes.categoryId = {
+          old: categoryRefName(item.categoryId),
+          new: category.name,
+        };
         item.categoryId = category._id;
       }
     }
@@ -214,7 +215,7 @@ export class ItemsService {
           changes,
           refCollection: null,
           refId: null,
-          summary: `Item edited: ${item.code}`,
+          summary: `Item edited: ${item.name}`,
         },
         session,
       );
@@ -257,7 +258,7 @@ export class ItemsService {
           },
           refCollection: null,
           refId: null,
-          summary: `Item deleted: ${item.code}`,
+          summary: `Item deleted: ${item.name}`,
         },
         session,
       );
@@ -381,6 +382,18 @@ export class ItemsService {
     }
 
     const history = await this.priceHistoryModel.find({ itemId: id }).sort({ createdAt: -1 }).exec();
+    const actorIds = [...new Set(history.map((entry) => entry.changedBy.toString()))];
+    const actors =
+      actorIds.length === 0
+        ? []
+        : await this.connection
+            .collection('users')
+            .find({ _id: { $in: actorIds.map((actorId) => new Types.ObjectId(actorId)) } })
+            .project({ username: 1 })
+            .toArray();
+    const usernames = new Map(
+      actors.map((actor) => [actor._id.toString(), typeof actor.username === 'string' ? actor.username : null]),
+    );
 
     return history.map((entry) => ({
       id: entry._id.toString(),
@@ -388,7 +401,7 @@ export class ItemsService {
       field: entry.field,
       oldValue: entry.oldValue,
       newValue: entry.newValue,
-      changedBy: entry.changedBy.toString(),
+      changedBy: usernames.get(entry.changedBy.toString()) ?? null,
       createdAt: entry.get('createdAt') as Date | undefined,
     }));
   }
@@ -423,4 +436,19 @@ export class ItemsService {
       updatedAt: item.get('updatedAt') as Date | undefined,
     };
   }
+}
+
+function categoryRefId(value: unknown): string {
+  if (value && typeof value === 'object' && '_id' in value) {
+    const id = (value as { _id: { toString(): string } })._id;
+    return id.toString();
+  }
+  return String(value);
+}
+
+function categoryRefName(value: unknown): string | null {
+  if (value && typeof value === 'object' && 'name' in value && typeof (value as { name: unknown }).name === 'string') {
+    return (value as { name: string }).name;
+  }
+  return null;
 }

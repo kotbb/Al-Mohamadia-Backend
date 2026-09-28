@@ -209,7 +209,7 @@ describe('SuppliersService', () => {
         expect.objectContaining({
           action: 'supplier_merged',
           changes: expect.objectContaining({
-            sourceIds: { old: null, new: [sourceId, sourceId2] },
+            sourceIds: { old: null, new: ['مصدر 1', 'مصدر 2'] },
           }),
         }),
         session,

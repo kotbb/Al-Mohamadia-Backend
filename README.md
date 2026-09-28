@@ -20,7 +20,7 @@ src/
     payments/
     purchases/
     supplier-payments/
-    inventory/             # stock, valuation, adjustments
+    inventory/             # stock, valuation, manual adjustments
     dashboard/
     audit/                 # append-only audit log
     health/
@@ -97,7 +97,7 @@ src/
 
 - Live stock list with low-stock filter and search
 - Stock valuation
-- Manual stock adjustments (جرد) with a reason; adjustments are append-only
+- Manual stock adjustments (جرد) with a reason, stored on the audit log
 
 ### Dashboard (`/api/v1/dashboard`)
 
@@ -321,12 +321,10 @@ Supplier payment list query params: `supplierId`, `status`, `type`, `method`, `p
 | `GET`  | `/api/v1/inventory/stock`           | Both | Stock list                 |
 | `GET`  | `/api/v1/inventory/valuation`       | Both | Stock valuation            |
 | `POST` | `/api/v1/inventory/adjustments`     | Both | Record a manual adjustment |
-| `GET`  | `/api/v1/inventory/adjustments`     | Both | List adjustments           |
-| `GET`  | `/api/v1/inventory/adjustments/:id` | Both | Get adjustment             |
 
 Stock list query params: `categoryId`, `stockStatus`, `q`, `page`, `limit`.
 
-Adjustment list query params: `itemId`, `period`, `date`, `page`, `limit`.
+A manual adjustment updates `Item.stockQuantity` and writes a `stock_adjusted` audit row. List those rows with `GET /api/v1/audit-logs`.
 
 ### Dashboard
 

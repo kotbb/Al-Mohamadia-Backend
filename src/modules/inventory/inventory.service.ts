@@ -2,38 +2,30 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { cairoPeriodRange } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { AuditService } from '../audit/audit.service';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { Item, ItemDocument } from '../items/schemas/item.schema';
-import { User, UserDocument } from '../users/schemas/user.schema';
+import { AdjustStockResponseDto } from './dto/adjust-stock-response.dto';
 import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
 import { InventoryValuationResponseDto } from './dto/inventory-valuation-response.dto';
-import { ListAdjustmentsQueryDto } from './dto/list-adjustments-query.dto';
 import { ListStockQueryDto } from './dto/list-stock-query.dto';
-import { StockAdjustmentListResponseDto, StockAdjustmentResponseDto } from './dto/stock-adjustment-response.dto';
 import { StockItemResponseDto, StockListResponseDto } from './dto/stock-list-response.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
-import { StockAdjustment, StockAdjustmentDocument } from './schemas/stock-adjustment.schema';
 
 @Injectable()
 export class InventoryService {
   constructor(
-    @InjectModel(StockAdjustment.name)
-    private readonly stockAdjustmentModel: Model<StockAdjustmentDocument>,
     @InjectModel(Item.name)
     private readonly itemModel: Model<ItemDocument>,
     @InjectModel(Category.name)
     private readonly categoryModel: Model<CategoryDocument>,
-    @InjectModel(User.name)
-    private readonly userModel: Model<UserDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly auditService: AuditService,
   ) {}
 
-  // 1. Manual Stock Audit Adjustment
-  public async adjustStock(dto: CreateStockAdjustmentDto, user: AuthUser): Promise<StockAdjustmentResponseDto> {
+  // 1. Manual stock adjustment
+  public async adjustStock(dto: CreateStockAdjustmentDto, user: AuthUser): Promise<AdjustStockResponseDto> {
     const item = await this.itemModel.findOne({ _id: dto.itemId, isDeleted: false }).exec();
     if (!item) {
       throw new NotFoundException('Item not found');
@@ -59,21 +51,9 @@ export class InventoryService {
       }
 
       const oldQuantity = lockedItem.stockQuantity;
+      const reason = dto.reason.trim();
       lockedItem.stockQuantity = newQuantity;
       await lockedItem.save({ session });
-
-      const [createdAdjustment] = await this.stockAdjustmentModel.create(
-        [
-          {
-            itemId: lockedItem._id,
-            oldQuantity,
-            newQuantity,
-            reason: dto.reason.trim(),
-            adjustedBy: new Types.ObjectId(user.id),
-          },
-        ],
-        { session },
-      );
 
       await this.auditService.log(
         {
@@ -83,10 +63,11 @@ export class InventoryService {
           entityId: lockedItem._id.toString(),
           changes: {
             stockQuantity: { old: oldQuantity, new: newQuantity },
+            reason: { old: null, new: reason },
           },
-          refCollection: 'StockAdjustment',
-          refId: createdAdjustment._id.toString(),
-          summary: `stockQuantity: ${oldQuantity} → ${newQuantity} (${dto.reason.trim()})`,
+          refCollection: null,
+          refId: null,
+          summary: `Stock adjusted: ${lockedItem.name}`,
         },
         session,
       );
@@ -94,23 +75,10 @@ export class InventoryService {
       await session.commitTransaction();
 
       return {
-        id: createdAdjustment._id.toString(),
         itemId: lockedItem._id.toString(),
-        item: {
-          id: lockedItem._id.toString(),
-          code: lockedItem.code,
-          name: lockedItem.name,
-        },
         oldQuantity,
         newQuantity,
-        diffQuantity: roundMoney(newQuantity - oldQuantity),
-        reason: createdAdjustment.reason,
-        adjustedBy: user.id,
-        adjuster: {
-          id: user.id,
-          username: user.username,
-        },
-        createdAt: createdAdjustment.get('createdAt') as Date | undefined,
+        reason,
       };
     } catch (error) {
       await session.abortTransaction();
@@ -365,125 +333,6 @@ export class InventoryService {
       totalValuationAtSellingPrice,
       potentialProfit,
       categories,
-    };
-  }
-
-  // 4. Adjustments List
-  public async getAdjustments(query: ListAdjustmentsQueryDto): Promise<StockAdjustmentListResponseDto> {
-    if (query.period !== undefined && !query.date) {
-      throw new BadRequestException('date is required when period is set');
-    }
-    if (query.date && query.period === undefined) {
-      throw new BadRequestException('period is required when date is set');
-    }
-
-    const filter: Record<string, unknown> = {};
-
-    if (query.itemId) {
-      filter.itemId = new Types.ObjectId(query.itemId);
-    }
-
-    if (query.period && query.date) {
-      try {
-        const { from, to } = cairoPeriodRange(query.period, query.date);
-        filter.createdAt = { $gte: from, $lt: to };
-      } catch {
-        throw new BadRequestException('Invalid date for period filter');
-      }
-    }
-
-    const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 10, 100);
-    const skip = (page - 1) * limit;
-
-    const [docs, total] = await Promise.all([
-      this.stockAdjustmentModel
-        .find(filter)
-        .populate('itemId', 'code name')
-        .populate('adjustedBy', 'username')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.stockAdjustmentModel.countDocuments(filter).exec(),
-    ]);
-
-    const items: StockAdjustmentResponseDto[] = docs.map((doc) => {
-      const itemDoc = doc.itemId as unknown as ItemDocument | null;
-      const userDoc = doc.adjustedBy as unknown as UserDocument | null;
-
-      return {
-        id: doc._id.toString(),
-        itemId: itemDoc ? itemDoc._id.toString() : doc.itemId.toString(),
-        item: itemDoc
-          ? {
-              id: itemDoc._id.toString(),
-              code: itemDoc.code,
-              name: itemDoc.name,
-            }
-          : null,
-        oldQuantity: doc.oldQuantity,
-        newQuantity: doc.newQuantity,
-        diffQuantity: roundMoney(doc.newQuantity - doc.oldQuantity),
-        reason: doc.reason,
-        adjustedBy: userDoc ? userDoc._id.toString() : doc.adjustedBy.toString(),
-        adjuster: userDoc
-          ? {
-              id: userDoc._id.toString(),
-              username: userDoc.username,
-            }
-          : null,
-        createdAt: doc.get('createdAt') as Date | undefined,
-      };
-    });
-
-    return {
-      items,
-      meta: {
-        page,
-        limit,
-        total,
-      },
-    };
-  }
-
-  // 5. Single Adjustment By ID
-  public async getAdjustmentById(id: string): Promise<StockAdjustmentResponseDto> {
-    const doc = await this.stockAdjustmentModel
-      .findById(id)
-      .populate('itemId', 'code name')
-      .populate('adjustedBy', 'username')
-      .exec();
-
-    if (!doc) {
-      throw new NotFoundException('Stock adjustment not found');
-    }
-
-    const itemDoc = doc.itemId as unknown as ItemDocument | null;
-    const userDoc = doc.adjustedBy as unknown as UserDocument | null;
-
-    return {
-      id: doc._id.toString(),
-      itemId: itemDoc ? itemDoc._id.toString() : doc.itemId.toString(),
-      item: itemDoc
-        ? {
-            id: itemDoc._id.toString(),
-            code: itemDoc.code,
-            name: itemDoc.name,
-          }
-        : null,
-      oldQuantity: doc.oldQuantity,
-      newQuantity: doc.newQuantity,
-      diffQuantity: roundMoney(doc.newQuantity - doc.oldQuantity),
-      reason: doc.reason,
-      adjustedBy: userDoc ? userDoc._id.toString() : doc.adjustedBy.toString(),
-      adjuster: userDoc
-        ? {
-            id: userDoc._id.toString(),
-            username: userDoc.username,
-          }
-        : null,
-      createdAt: doc.get('createdAt') as Date | undefined,
     };
   }
 }

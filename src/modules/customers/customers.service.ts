@@ -295,11 +295,10 @@ export class CustomersService {
 
     target.balance = roundMoney(oldTargetBalance + sourcesBalanceSum);
 
-    const sourceIds = sources.map((source) => source._id.toString());
     const sourceNames = sources.map((source) => source.name);
     const changes: Record<string, { old: unknown; new: unknown }> = {
-      sourceIds: { old: null, new: sourceIds },
-      targetId: { old: null, new: target._id.toString() },
+      sourceIds: { old: null, new: sourceNames },
+      targetId: { old: null, new: target.name },
       balance: { old: oldTargetBalance, new: target.balance },
       sourcesBalanceSum: { old: sourcesBalanceSum, new: 0 },
     };

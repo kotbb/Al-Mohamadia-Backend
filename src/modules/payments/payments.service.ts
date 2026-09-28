@@ -108,7 +108,7 @@ export class PaymentsService {
           entityType: 'Payment',
           entityId: createdPayment._id.toString(),
           changes: {
-            customerId: { old: null, new: lockedCustomer._id.toString() },
+            customerId: { old: null, new: lockedCustomer.name },
             amount: { old: null, new: amount },
             method: { old: null, new: createdPayment.method },
             balance: { old: oldBalance, new: newBalance },
@@ -189,7 +189,7 @@ export class PaymentsService {
           entityId: lockedPayment._id.toString(),
           changes: {
             reversedAt: { old: null, new: now },
-            reversedBy: { old: null, new: user.id },
+            reversedBy: { old: null, new: user.username },
             balance: { old: oldBalance, new: newBalance },
           },
           refCollection: null,

@@ -60,7 +60,7 @@ export class PurchasesService {
     const itemById = new Map(items.map((item) => [item._id.toString(), item]));
     for (const item of items) {
       if (!item.isActive) {
-        throw new BadRequestException(`Item is inactive: ${item.code}`);
+        throw new BadRequestException(`Item is inactive: ${item.name}`);
       }
     }
 
@@ -150,7 +150,7 @@ export class PurchasesService {
           entityId: created._id.toString(),
           changes: {
             invoiceNumber: { old: null, new: created.invoiceNumber },
-            supplierId: { old: null, new: lockedSupplier._id.toString() },
+            supplierId: { old: null, new: lockedSupplier.name },
             total: { old: null, new: created.total },
             paid: { old: null, new: created.paid },
             remaining: { old: null, new: created.remaining },
@@ -338,10 +338,10 @@ export class PurchasesService {
     const isCubic = item.pricingMode === PricingMode.PER_CUBIC_METER;
     if (isCubic) {
       if (lineDto.thickness === undefined || lineDto.width === undefined || lineDto.length === undefined) {
-        throw new BadRequestException(`Dimensions are required for cubic-meter item: ${item.code}`);
+        throw new BadRequestException(`Dimensions are required for cubic-meter item: ${item.name}`);
       }
       if (lineDto.thickness <= 0 || lineDto.width <= 0 || lineDto.length <= 0) {
-        throw new BadRequestException(`Dimensions must be greater than 0 for item: ${item.code}`);
+        throw new BadRequestException(`Dimensions must be greater than 0 for item: ${item.name}`);
       }
     }
 

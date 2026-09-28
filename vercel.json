@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "src/main.ts": {
+      "memory": 2048,
+      "maxDuration": 300
+    }
+  }
+}

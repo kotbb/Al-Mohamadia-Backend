@@ -38,6 +38,7 @@ import * as Joi from 'joi';
         SUPER_ADMIN_USERNAME: Joi.string().optional(),
         SUPER_ADMIN_PASSWORD: Joi.string().optional(),
         PUBLIC_API_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
+        CORS_ORIGIN: Joi.string().default('http://localhost:3001'),
         THROTTLE_DISABLED: Joi.boolean().default(false),
         THROTTLE_AUTH_LIMIT: Joi.number().integer().min(1).default(10),
         THROTTLE_PUBLIC_PDF_LIMIT: Joi.number().integer().min(1).default(20),
@@ -49,6 +50,7 @@ import * as Joi from 'joi';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGO_URI'),
+        maxPoolSize: 10,
       }),
     }),
     ThrottlerModule.forRootAsync({

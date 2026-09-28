@@ -4,6 +4,6 @@ export class ItemPriceHistoryResponseDto {
   field: string;
   oldValue: unknown;
   newValue: unknown;
-  changedBy: string;
+  changedBy: string | null;
   createdAt?: Date;
 }

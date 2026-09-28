@@ -4,26 +4,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
-import { SalesInvoicePeriod } from '../../shared/enums/sales-invoice-period.enum';
 import { AuditService } from '../audit/audit.service';
 import { Category } from '../categories/schemas/category.schema';
 import { Item } from '../items/schemas/item.schema';
-import { User } from '../users/schemas/user.schema';
 import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
-import { ListAdjustmentsQueryDto } from './dto/list-adjustments-query.dto';
 import { ListStockQueryDto } from './dto/list-stock-query.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
 import { InventoryService } from './inventory.service';
-import { StockAdjustment } from './schemas/stock-adjustment.schema';
 
 describe('InventoryService', () => {
   let service: InventoryService;
-  let stockAdjustmentModel: {
-    create: jest.Mock;
-    findById: jest.Mock;
-    find: jest.Mock;
-    countDocuments: jest.Mock;
-  };
   let itemModel: {
     findOne: jest.Mock;
     find: jest.Mock;
@@ -31,9 +21,6 @@ describe('InventoryService', () => {
     aggregate: jest.Mock;
   };
   let categoryModel: {
-    findOne: jest.Mock;
-  };
-  let userModel: {
     findOne: jest.Mock;
   };
   let auditService: { log: jest.Mock };
@@ -53,7 +40,6 @@ describe('InventoryService', () => {
 
   const itemId = '507f1f77bcf86cd799439011';
   const categoryId = '507f1f77bcf86cd799439022';
-  const adjustmentId = '507f1f77bcf86cd799439033';
 
   const makeItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemId },
@@ -94,13 +80,6 @@ describe('InventoryService', () => {
       startSession: jest.fn().mockResolvedValue(session),
     };
 
-    stockAdjustmentModel = {
-      create: jest.fn(),
-      findById: jest.fn(),
-      find: jest.fn(),
-      countDocuments: jest.fn(),
-    };
-
     itemModel = {
       findOne: jest.fn(),
       find: jest.fn(),
@@ -112,10 +91,6 @@ describe('InventoryService', () => {
       findOne: jest.fn(),
     };
 
-    userModel = {
-      findOne: jest.fn(),
-    };
-
     auditService = {
       log: jest.fn().mockResolvedValue(undefined),
     };
@@ -123,10 +98,8 @@ describe('InventoryService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
-        { provide: getModelToken(StockAdjustment.name), useValue: stockAdjustmentModel },
         { provide: getModelToken(Item.name), useValue: itemModel },
         { provide: getModelToken(Category.name), useValue: categoryModel },
-        { provide: getModelToken(User.name), useValue: userModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: AuditService, useValue: auditService },
       ],
@@ -136,21 +109,9 @@ describe('InventoryService', () => {
   });
 
   describe('adjustStock', () => {
-    it('successfully updates item stock, creates StockAdjustment, and writes AuditLog referencing it', async () => {
+    it('updates item stock and writes a stock_adjusted audit row', async () => {
       const item = makeItem({ stockQuantity: 10 });
       itemModel.findOne.mockReturnValue(mockQuery(item));
-
-      const createdAdjustment = {
-        _id: { toString: () => adjustmentId },
-        itemId: { toString: () => itemId },
-        oldQuantity: 10,
-        newQuantity: 15,
-        reason: 'جرد فعلي في المخزن',
-        adjustedBy: { toString: () => actor.id },
-        get: (key: string) => (key === 'createdAt' ? new Date() : undefined),
-      };
-
-      stockAdjustmentModel.create.mockResolvedValue([createdAdjustment]);
 
       const dto: CreateStockAdjustmentDto = {
         itemId,
@@ -160,38 +121,28 @@ describe('InventoryService', () => {
 
       const result = await service.adjustStock(dto, actor);
 
-      expect(result.id).toBe(adjustmentId);
+      expect(result.itemId).toBe(itemId);
       expect(result.oldQuantity).toBe(10);
       expect(result.newQuantity).toBe(15);
-      expect(result.diffQuantity).toBe(5);
       expect(result.reason).toBe('جرد فعلي في المخزن');
-      expect(result.adjustedBy).toBe(actor.id);
 
       expect(item.stockQuantity).toBe(15);
       expect(item.save).toHaveBeenCalledWith({ session });
 
-      expect(stockAdjustmentModel.create).toHaveBeenCalledWith(
-        [
-          expect.objectContaining({
-            oldQuantity: 10,
-            newQuantity: 15,
-            reason: 'جرد فعلي في المخزن',
-          }),
-        ],
-        { session },
-      );
-
-      // AuditLog contract: action 'stock_adjusted', refCollection 'StockAdjustment'
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           userId: actor.id,
           action: 'stock_adjusted',
           entityType: 'Item',
           entityId: itemId,
-          changes: { stockQuantity: { old: 10, new: 15 } },
-          refCollection: 'StockAdjustment',
-          refId: adjustmentId,
-        }),
+          changes: {
+            stockQuantity: { old: 10, new: 15 },
+            reason: { old: null, new: 'جرد فعلي في المخزن' },
+          },
+          refCollection: null,
+          refId: null,
+          summary: 'Stock adjusted: خشب سويد',
+        },
         session,
       );
 
@@ -294,87 +245,6 @@ describe('InventoryService', () => {
       expect(result.potentialProfit).toBe(5000);
       expect(result.categories.length).toBe(1);
       expect(result.categories[0].categoryName).toBe('أخشاب');
-    });
-  });
-
-  describe('getAdjustments', () => {
-    it('returns paginated adjustments list', async () => {
-      const adjustmentDoc = {
-        _id: { toString: () => adjustmentId },
-        itemId: {
-          _id: { toString: () => itemId },
-          code: 'WOOD-01',
-          name: 'خشب سويد',
-        },
-        oldQuantity: 10,
-        newQuantity: 15,
-        reason: 'جرد سنوي',
-        adjustedBy: {
-          _id: { toString: () => actor.id },
-          username: 'admin',
-        },
-        get: () => new Date(),
-      };
-
-      stockAdjustmentModel.find.mockReturnValue(mockQuery([adjustmentDoc]));
-      stockAdjustmentModel.countDocuments.mockReturnValue(mockQuery(1));
-
-      const query: ListAdjustmentsQueryDto = {
-        itemId,
-        page: 1,
-        limit: 20,
-      };
-
-      const result = await service.getAdjustments(query);
-
-      expect(result.items.length).toBe(1);
-      expect(result.items[0].oldQuantity).toBe(10);
-      expect(result.items[0].newQuantity).toBe(15);
-      expect(result.items[0].diffQuantity).toBe(5);
-      expect(result.meta.total).toBe(1);
-    });
-
-    it('fails if period is given without date', async () => {
-      const query: ListAdjustmentsQueryDto = {
-        period: SalesInvoicePeriod.DAY,
-      };
-
-      await expect(service.getAdjustments(query)).rejects.toThrow(BadRequestException);
-    });
-  });
-
-  describe('getAdjustmentById', () => {
-    it('returns single adjustment by id', async () => {
-      const adjustmentDoc = {
-        _id: { toString: () => adjustmentId },
-        itemId: {
-          _id: { toString: () => itemId },
-          code: 'WOOD-01',
-          name: 'خشب سويد',
-        },
-        oldQuantity: 10,
-        newQuantity: 8,
-        reason: 'هالك وتلفيات',
-        adjustedBy: {
-          _id: { toString: () => actor.id },
-          username: 'admin',
-        },
-        get: () => new Date(),
-      };
-
-      stockAdjustmentModel.findById.mockReturnValue(mockQuery(adjustmentDoc));
-
-      const result = await service.getAdjustmentById(adjustmentId);
-
-      expect(result.id).toBe(adjustmentId);
-      expect(result.diffQuantity).toBe(-2);
-      expect(result.reason).toBe('هالك وتلفيات');
-    });
-
-    it('fails if adjustment is not found', async () => {
-      stockAdjustmentModel.findById.mockReturnValue(mockQuery(null));
-
-      await expect(service.getAdjustmentById(adjustmentId)).rejects.toThrow(NotFoundException);
     });
   });
 });
