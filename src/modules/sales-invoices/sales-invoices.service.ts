@@ -16,15 +16,15 @@ import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../../shared/utils/volume/cubic-meter.util';
 import { SHOP_NAME } from './constants/shop.constant';
 import { CreateSalesInvoiceDto, CreateSalesInvoiceLineDto } from './dto/create-sales-invoice.dto';
+import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
 import { ListSalesInvoicesQueryDto } from './dto/list-sales-invoices-query.dto';
 import { SalesInvoiceListResponseDto, SalesInvoiceResponseDto } from './dto/sales-invoice-response.dto';
 import { SalesInvoiceShareResponseDto } from './dto/sales-invoice-share-response.dto';
-import { buildSalesInvoicePdf } from './pdf/sales-invoice-pdf.builder';
+import { PublicInvoiceResponseDto } from './dto/public-invoice-response.dto';
 import { InvoiceCounter, InvoiceCounterDocument } from './schemas/invoice-counter.schema';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceDocument } from './schemas/sales-invoice.schema';
 import { BuiltLine } from './types/built-line.type';
-import { InvoicePdfResult } from './types/invoice-pdf-result.type';
 import { SalesInvoiceListFilter } from './types/sales-invoice-list-filter.type';
 
 @Injectable()
@@ -95,7 +95,7 @@ export class SalesInvoicesService {
     const net = roundMoney(total - discount);
     const paid = roundMoney(dto.paid);
     if (paid < 0) {
-      throw new BadRequestException('Paid amount cannot be negative');
+      throw new BadRequestException('Paid amount cannot exceed net total or be negative');
     }
 
     if (dto.type === SalesInvoiceType.CASH_SALE) {
@@ -322,79 +322,254 @@ export class SalesInvoicesService {
     }
   }
 
-  // Get a PDF buffer by invoice ID
-  public async getPdfBufferById(id: string): Promise<InvoicePdfResult> {
+  // Update an existing sales invoice
+  public async update(id: string, dto: UpdateSalesInvoiceDto, user: AuthUser): Promise<SalesInvoiceResponseDto> {
     const invoice = await this.requireInvoiceById(id);
-    const buffer = await this.buildPdfForInvoice(invoice);
-    return { buffer, invoiceNumber: invoice.invoiceNumber };
+    if (invoice.status !== SalesInvoiceStatus.SAVED) {
+      throw new BadRequestException('Only saved invoices can be edited');
+    }
+
+    const itemIds = Array.from(new Set(dto.lines.map((l) => l.itemId)));
+    const items = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
+    if (items.length !== itemIds.length) {
+      throw new NotFoundException('One or more items not found');
+    }
+    for (const item of items) {
+      if (!item.isActive) {
+        throw new BadRequestException(`Item is inactive: ${item.name}`);
+      }
+    }
+    const itemById = new Map(items.map((i) => [i._id.toString(), i]));
+
+    let customer: CustomerDocument | null = null;
+    if (dto.type === SalesInvoiceType.CUSTOMER_SALE) {
+      if (!dto.customerId) {
+        throw new BadRequestException('Customer is required for customer sales');
+      }
+      customer = await this.customerModel.findOne({ _id: dto.customerId, isDeleted: false }).exec();
+      if (!customer) {
+        throw new NotFoundException('Customer not found');
+      }
+      if (!customer.isActive) {
+        throw new BadRequestException('Customer is inactive');
+      }
+    }
+
+    const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
+
+    const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
+    const discount = roundMoney(dto.discount ?? 0);
+    if (discount < 0 || discount > total) {
+      throw new BadRequestException('Discount must be between 0 and total');
+    }
+
+    const net = roundMoney(total - discount);
+    const paid = roundMoney(dto.paid);
+    if (paid < 0) {
+      throw new BadRequestException('Paid amount cannot be negative');
+    }
+
+    if (dto.type === SalesInvoiceType.CASH_SALE) {
+      if (paid !== net) {
+        throw new BadRequestException('Cash sale must be paid in full');
+      }
+    } else if (paid > net) {
+      throw new BadRequestException('Paid amount cannot exceed net total');
+    }
+
+    const remaining = roundMoney(net - paid);
+
+    const session = await this.connection.startSession();
+    session.startTransaction();
+    try {
+      // 1. Revert previous lines stock
+      const oldItemIds = invoice.lines.map((line) => line.itemId);
+      const oldItems = await this.itemModel
+        .find({ _id: { $in: oldItemIds } })
+        .session(session)
+        .exec();
+      const oldItemById = new Map(oldItems.map((item) => [item._id.toString(), item]));
+
+      for (const line of invoice.lines) {
+        const item = oldItemById.get(line.itemId.toString());
+        if (!item) {
+          throw new NotFoundException(`Item not found for line: ${line.itemId.toString()}`);
+        }
+
+        const stockDelta = stockDeltaForLine({
+          pricingMode: item.pricingMode,
+          quantity: line.quantity,
+          thicknessCm: line.thickness,
+          widthCm: line.width,
+          lengthCm: line.length,
+        });
+
+        await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
+      }
+
+      // 2. Apply new lines stock
+      for (const row of builtLines) {
+        await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: -row.stockDelta } }, { session });
+      }
+
+      // 3. Customer balance adjustments
+      const oldCustomerId = invoice.customerId;
+      const oldRemaining = invoice.remaining;
+      const newCustomerId = dto.type === SalesInvoiceType.CUSTOMER_SALE && customer ? customer._id : null;
+
+      const isSameCustomer =
+        oldCustomerId &&
+        newCustomerId &&
+        oldCustomerId.toString() === newCustomerId.toString() &&
+        invoice.type === SalesInvoiceType.CUSTOMER_SALE &&
+        dto.type === SalesInvoiceType.CUSTOMER_SALE;
+
+      if (isSameCustomer) {
+        const delta = roundMoney(remaining - oldRemaining);
+        if (delta !== 0) {
+          const cust = await this.customerModel.findById(newCustomerId).session(session).exec();
+          if (!cust) {
+            throw new NotFoundException('Customer not found');
+          }
+          cust.balance = roundMoney(cust.balance + delta);
+          await cust.save({ session });
+        }
+      } else {
+        // Revert old customer's remaining balance
+        if (invoice.type === SalesInvoiceType.CUSTOMER_SALE && oldCustomerId && oldRemaining > 0) {
+          const oldCust = await this.customerModel.findById(oldCustomerId).session(session).exec();
+          if (oldCust) {
+            oldCust.balance = roundMoney(oldCust.balance - oldRemaining);
+            await oldCust.save({ session });
+          }
+        }
+
+        // Apply new customer's remaining balance
+        if (dto.type === SalesInvoiceType.CUSTOMER_SALE && newCustomerId && remaining > 0) {
+          const targetCust = await this.customerModel.findById(newCustomerId).session(session).exec();
+          if (!targetCust) {
+            throw new NotFoundException('Customer not found');
+          }
+          targetCust.balance = roundMoney(targetCust.balance + remaining);
+          await targetCust.save({ session });
+        }
+      }
+
+      // 4. Payment reconciliation (In-Place Update)
+      const existingPayment = await this.paymentModel
+        .findOne({
+          invoiceId: invoice._id,
+          reversedAt: null,
+        })
+        .session(session)
+        .exec();
+
+      if (paid > 0) {
+        if (existingPayment) {
+          existingPayment.amount = paid;
+          existingPayment.method = dto.paymentMethod ?? existingPayment.method ?? PaymentMethod.CASH;
+          existingPayment.customerId = newCustomerId;
+          existingPayment.notes = dto.paymentNotes ? dto.paymentNotes.trim() : null;
+          await existingPayment.save({ session });
+        } else {
+          await this.paymentModel.create(
+            [
+              {
+                customerId: newCustomerId,
+                invoiceId: invoice._id,
+                amount: paid,
+                method: dto.paymentMethod ?? PaymentMethod.CASH,
+                notes: dto.paymentNotes ? dto.paymentNotes.trim() : null,
+                recordedBy: new Types.ObjectId(user.id),
+                reversedAt: null,
+                reversedBy: null,
+              },
+            ],
+            { session },
+          );
+        }
+      } else if (existingPayment) {
+        existingPayment.reversedAt = new Date();
+        existingPayment.reversedBy = new Types.ObjectId(user.id);
+        await existingPayment.save({ session });
+      }
+
+      // 5. Update invoice document
+      const oldType = invoice.type;
+      const oldTotal = invoice.total;
+      const oldDiscount = invoice.discount;
+      const oldPaid = invoice.paid;
+
+      invoice.type = dto.type;
+      invoice.customerId = newCustomerId;
+      invoice.lines = builtLines.map((row) => row.line);
+      invoice.total = total;
+      invoice.discount = discount;
+      invoice.paid = paid;
+      invoice.remaining = remaining;
+      await invoice.save({ session });
+
+      // 6. Audit log
+      await this.auditService.log(
+        {
+          userId: user.id,
+          action: 'invoice_updated',
+          entityType: 'SalesInvoice',
+          entityId: invoice._id.toString(),
+          changes: {
+            type: { old: oldType, new: invoice.type },
+            customerId: { old: oldCustomerId?.toString() ?? null, new: newCustomerId?.toString() ?? null },
+            total: { old: oldTotal, new: total },
+            discount: { old: oldDiscount, new: discount },
+            paid: { old: oldPaid, new: paid },
+            remaining: { old: oldRemaining, new: remaining },
+          },
+          refCollection: null,
+          refId: null,
+          summary: `Invoice updated: ${invoice.invoiceNumber}`,
+        },
+        session,
+      );
+
+      await session.commitTransaction();
+      return this.toResponseDto(invoice);
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 
-  // Get a PDF buffer by token
-  public async getPdfBufferByToken(token: string): Promise<InvoicePdfResult> {
+  // Get a public invoice payload by token (no auth required)
+  public async getPublicInvoiceByToken(token: string): Promise<PublicInvoiceResponseDto> {
     const invoice = await this.salesInvoiceModel.findOne({ pdfShareToken: token }).exec();
     if (!invoice) {
       throw new NotFoundException('Sales invoice not found');
     }
-    const buffer = await this.buildPdfForInvoice(invoice);
-    return { buffer, invoiceNumber: invoice.invoiceNumber };
-  }
 
-  // Get a share payload by invoice ID
-  public async getSharePayload(id: string): Promise<SalesInvoiceShareResponseDto> {
-    const invoice = await this.requireInvoiceById(id);
-
-    if (!invoice.pdfShareToken) {
-      invoice.pdfShareToken = randomBytes(32).toString('hex');
-      await invoice.save();
-    }
-
-    const baseUrl = this.configService.get<string>('PUBLIC_API_BASE_URL', 'http://localhost:3000').replace(/\/$/, '');
-    const pdfUrl = `${baseUrl}/api/v1/public/sales-invoices/${invoice.pdfShareToken}/pdf`;
-    const message = `فاتورة ${SHOP_NAME} رقم ${invoice.invoiceNumber}\n${pdfUrl}`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-    return { pdfUrl, whatsappUrl, message };
-  }
-
-  // ----------------- Helper Methods -----------------
-
-  private async requireInvoiceById(id: string): Promise<SalesInvoiceDocument> {
-    const invoice = await this.salesInvoiceModel.findById(id).exec();
-    if (!invoice) {
-      throw new NotFoundException('Sales invoice not found');
-    }
-    return invoice;
-  }
-
-  private async buildPdfForInvoice(invoice: SalesInvoiceDocument): Promise<Buffer> {
     const itemIds = invoice.lines.map((line) => line.itemId);
     const items = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
     const itemById = new Map(items.map((item) => [item._id.toString(), item]));
 
     let customerName: string | null = null;
-    let customerPhone: string | null = null;
     if (invoice.customerId) {
       const customer = await this.customerModel.findById(invoice.customerId).exec();
-      if (customer) {
-        customerName = customer.name;
-        customerPhone = customer.phone;
-      }
+      if (customer) customerName = customer.name;
     }
 
     const createdAt = (invoice.get('createdAt') as Date | undefined) ?? new Date();
 
-    return buildSalesInvoicePdf({
+    return {
       invoiceNumber: invoice.invoiceNumber,
-      type: invoice.type,
+      createdAt: createdAt.toISOString(),
       status: invoice.status,
-      createdAt,
+      type: invoice.type,
       customerName,
-      customerPhone,
       lines: invoice.lines.map((line) => {
         const item = itemById.get(line.itemId.toString());
-        const itemLabel = item?.name ?? 'Item';
         return {
-          itemLabel,
+          itemLabel: item?.name ?? '',
           quantity: line.quantity,
           width: line.width ?? null,
           length: line.length ?? null,
@@ -408,7 +583,39 @@ export class SalesInvoicesService {
       discount: invoice.discount,
       paid: invoice.paid,
       remaining: invoice.remaining,
-    });
+    };
+  }
+
+  // Get a share payload by invoice ID
+  public async getSharePayload(id: string): Promise<SalesInvoiceShareResponseDto> {
+    const invoice = await this.requireInvoiceById(id);
+
+    if (!invoice.pdfShareToken) {
+      invoice.pdfShareToken = randomBytes(32).toString('hex');
+      await invoice.save();
+    }
+
+    const frontendUrl = this.configService
+      .get<string>(
+        'FRONTEND_URL',
+        this.configService.get<string>('CORS_ORIGIN', 'http://localhost:3001') ?? 'http://localhost:3001',
+      )
+      .replace(/\/$/, '');
+    const receiptUrl = `${frontendUrl}/ar/invoices/public/${invoice.pdfShareToken}`;
+    const message = `فاتورة ${SHOP_NAME} رقم ${invoice.invoiceNumber}\n${receiptUrl}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    return { pdfUrl: receiptUrl, whatsappUrl, message };
+  }
+
+  // ----------------- Helper Methods -----------------
+
+  private async requireInvoiceById(id: string): Promise<SalesInvoiceDocument> {
+    const invoice = await this.salesInvoiceModel.findById(id).exec();
+    if (!invoice) {
+      throw new NotFoundException('Sales invoice not found');
+    }
+    return invoice;
   }
 
   private buildLine(lineDto: CreateSalesInvoiceLineDto, item: ItemDocument): BuiltLine {

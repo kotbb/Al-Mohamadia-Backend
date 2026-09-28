@@ -192,15 +192,22 @@ unique partial on `pdfShareToken` where token is a string.
   and reverses the `Customer.balance += remaining` that was applied at save
   time (use the invoice’s original `remaining` at save, not a replay of
   payment rows). On-invoice `Payment` rows get `reversedAt` / `reversedBy`.
-- No edit after save — cancel only.
-- Reject deleted or inactive items/customers on create.
+- Editing an invoice after save (`PATCH /sales-invoices/:id`):
+  - Only `SAVED` invoices can be edited (`CANCELLED` invoices cannot be edited).
+  - Preserves immutable identifiers: `invoiceNumber`, `pdfShareToken`, and `createdAt`.
+  - Transactional stock reconciliation: restores stock from old lines (`$inc: +oldDelta`) and deducts stock for new lines (`$inc: -newDelta`).
+  - Customer balance adjustment: removes old remaining from customer debt and applies new remaining (handles customer changes and switching between `cash_sale` and `customer_sale`).
+  - In-place payment reconciliation: updates existing linked payment amount and method in-place, creates new payment if previously unpaid, or soft-reverses if new `paid = 0`.
+  - Emits `invoice_updated` to `AuditLog`.
+- Reject deleted or inactive items/customers on create or update.
 - List filters: optional `status`; `period=day|week|month|year` + `date`
   (`YYYY-MM-DD`) in **Africa/Cairo** (week = Saturday–Friday); search `q`
   by invoice number or customer name/phone.
-- PDF: authenticated `GET /sales-invoices/:id/pdf` and public
-  `GET /public/sales-invoices/:token/pdf` (token = `pdfShareToken`).
-  Share payload: `GET /sales-invoices/:id/share` → `{ pdfUrl, whatsappUrl, message }`.
-  PDFs are generated on request (Arabic-primary); tokens do not expire.
+- Invoice Sharing & Client-Side PDF:
+  - Zero serverless overhead: PDF generation is decoupled from the backend (no headless browser or Chromium runtime).
+  - Public invoice endpoint: `GET /api/v1/public/sales-invoices/:token` (unauthenticated, token = `pdfShareToken`) returns self-contained public invoice JSON.
+  - Share payload: `GET /sales-invoices/:id/share` → `{ pdfUrl, whatsappUrl, message }`, where `pdfUrl` links directly to the customer-facing web receipt at `${FRONTEND_URL}/ar/invoices/public/:token`.
+  - Customers and users view the pixel-perfect branded A4 sheet and export PDF or print client-side. Token does not expire.
 
 ---
 

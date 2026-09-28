@@ -11,16 +11,11 @@ import { Item } from '../items/schemas/item.schema';
 import { AuditService } from '../audit/audit.service';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
+import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../shared/enums/sales-invoice-type.enum';
-import { closeSalesInvoicePdfBrowser } from './pdf/sales-invoice-pdf.builder';
-
 describe('SalesInvoicesService', () => {
-  afterAll(async () => {
-    await closeSalesInvoicePdfBrowser();
-  });
-
   let service: SalesInvoicesService;
   let salesInvoiceModel: {
     create: jest.Mock;
@@ -29,7 +24,7 @@ describe('SalesInvoicesService', () => {
     findOne: jest.Mock;
     countDocuments: jest.Mock;
   };
-  let paymentModel: { create: jest.Mock; updateMany: jest.Mock };
+  let paymentModel: { create: jest.Mock; updateMany: jest.Mock; findOne: jest.Mock };
   let invoiceCounterModel: { findOneAndUpdate: jest.Mock };
   let customerModel: { findOne: jest.Mock; findById: jest.Mock; find: jest.Mock };
   let itemModel: { find: jest.Mock; findById: jest.Mock; updateOne: jest.Mock };
@@ -139,6 +134,11 @@ describe('SalesInvoicesService', () => {
     paymentModel = {
       create: jest.fn().mockResolvedValue([{}]),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      findOne: jest.fn().mockReturnValue({
+        session: () => ({
+          exec: () => Promise.resolve(null),
+        }),
+      }),
     };
 
     invoiceCounterModel = {
@@ -434,6 +434,140 @@ describe('SalesInvoicesService', () => {
     });
   });
 
+  describe('update', () => {
+    it('rejects editing cancelled invoice', async () => {
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(makeInvoice({ status: SalesInvoiceStatus.CANCELLED })),
+      });
+
+      await expect(
+        service.update(
+          invoiceId,
+          {
+            type: SalesInvoiceType.CASH_SALE,
+            lines: [{ itemId, quantity: 1, piecePrice: 450 }],
+            paid: 450,
+          },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('updates cash sale, reconciles stock and in-place payment', async () => {
+      const invoice = makeInvoice({
+        type: SalesInvoiceType.CASH_SALE,
+        customerId: null,
+        total: 900,
+        paid: 900,
+        remaining: 0,
+        lines: [
+          {
+            itemId: { toString: () => itemId },
+            quantity: 2,
+            piecePrice: 450,
+            lineTotal: 900,
+          },
+        ],
+      });
+
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(invoice),
+      });
+
+      const existingPayment = {
+        amount: 900,
+        method: PaymentMethod.CASH,
+        customerId: null,
+        notes: null,
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      paymentModel.findOne.mockReturnValue({
+        session: () => ({
+          exec: () => Promise.resolve(existingPayment),
+        }),
+      });
+
+      const result = await service.update(
+        invoiceId,
+        {
+          type: SalesInvoiceType.CASH_SALE,
+          lines: [{ itemId, quantity: 3, piecePrice: 450 }],
+          paid: 1350,
+        },
+        actor,
+      );
+
+      // Reverts old stock (+2) and applies new stock (-3)
+      expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: { toString: expect.any(Function) } }, { $inc: { stockQuantity: 2 } }, { session });
+      expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: itemId }, { $inc: { stockQuantity: -3 } }, { session });
+
+      // Updates in-place payment
+      expect(existingPayment.amount).toBe(1350);
+      expect(existingPayment.save).toHaveBeenCalled();
+
+      expect(result.total).toBe(1350);
+      expect(result.paid).toBe(1350);
+      expect(result.remaining).toBe(0);
+    });
+
+    it('updates customer sale and adjusts customer balance delta', async () => {
+      const customer = makeCustomer({ balance: 500 });
+      customerModel.findById.mockReturnValue({
+        session: () => ({
+          exec: () => Promise.resolve(customer),
+        }),
+        exec: () => Promise.resolve(customer),
+      });
+
+      const invoice = makeInvoice({
+        type: SalesInvoiceType.CUSTOMER_SALE,
+        customerId: { toString: () => customerId },
+        total: 900,
+        paid: 400,
+        remaining: 500,
+      });
+
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(invoice),
+      });
+
+      const result = await service.update(
+        invoiceId,
+        {
+          type: SalesInvoiceType.CUSTOMER_SALE,
+          customerId,
+          lines: [{ itemId, quantity: 4, piecePrice: 450 }],
+          paid: 600,
+        },
+        actor,
+      );
+
+      expect(result.total).toBe(1800);
+      expect(result.remaining).toBe(1200);
+      expect(customer.balance).toBe(1200);
+    });
+
+    it('rejects cash sale when paid does not equal net', async () => {
+      const invoice = makeInvoice();
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(invoice),
+      });
+
+      await expect(
+        service.update(
+          invoiceId,
+          {
+            type: SalesInvoiceType.CASH_SALE,
+            lines: [{ itemId, quantity: 1, piecePrice: 450 }],
+            paid: 300,
+          },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('share and pdf', () => {
     it('mints pdfShareToken and returns WhatsApp payload', async () => {
       const invoice = makeInvoice({ pdfShareToken: null });
@@ -446,7 +580,7 @@ describe('SalesInvoicesService', () => {
       expect(invoice.pdfShareToken).toEqual(expect.any(String));
       expect(invoice.pdfShareToken).toHaveLength(64);
       expect(invoice.save).toHaveBeenCalled();
-      expect(result.pdfUrl).toContain(`/api/v1/public/sales-invoices/${invoice.pdfShareToken}/pdf`);
+      expect(result.pdfUrl).toContain(`/invoices/public/${invoice.pdfShareToken}`);
       expect(result.whatsappUrl).toContain('https://wa.me/?text=');
       expect(result.message).toContain(invoice.invoiceNumber);
     });
@@ -463,41 +597,21 @@ describe('SalesInvoicesService', () => {
       expect(result.pdfUrl).toContain('existing-token-value-0123456789abcdef');
     });
 
-    it('builds PDF buffer for invoice id', async () => {
-      const invoice = makeInvoice();
-      salesInvoiceModel.findById.mockReturnValue({
-        exec: () => Promise.resolve(invoice),
-      });
-      itemModel.find.mockReturnValue({
-        exec: () => Promise.resolve([makeItem()]),
-      });
-
-      const result = await service.getPdfBufferById(invoiceId);
-
-      expect(result.invoiceNumber).toBe('INV-0001');
-      expect(result.buffer.length).toBeGreaterThan(100);
-      expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
-    }, 60_000);
-
-    it('builds PDF by public token and 404s on unknown token', async () => {
+    it('returns public invoice by token and throws 404 on missing', async () => {
       const invoice = makeInvoice({
         pdfShareToken: 'tok',
-        status: SalesInvoiceStatus.CANCELLED,
       });
       salesInvoiceModel.findOne.mockReturnValue({
         exec: () => Promise.resolve(invoice),
       });
-      itemModel.find.mockReturnValue({
-        exec: () => Promise.resolve([makeItem()]),
-      });
 
-      const result = await service.getPdfBufferByToken('tok');
-      expect(result.buffer.subarray(0, 4).toString()).toBe('%PDF');
+      const result = await service.getPublicInvoiceByToken('tok');
+      expect(result.invoiceNumber).toBe('INV-0001');
 
       salesInvoiceModel.findOne.mockReturnValue({
         exec: () => Promise.resolve(null),
       });
-      await expect(service.getPdfBufferByToken('missing')).rejects.toThrow(NotFoundException);
-    }, 60_000);
+      await expect(service.getPublicInvoiceByToken('missing')).rejects.toThrow(NotFoundException);
+    });
   });
 });

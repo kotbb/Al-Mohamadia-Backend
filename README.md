@@ -16,7 +16,7 @@ src/
     items/                 # items + price history
     customers/
     suppliers/
-    sales-invoices/        # invoices, PDF, public share PDF
+    sales-invoices/        # invoices, public receipt, WhatsApp share
     payments/
     purchases/
     supplier-payments/
@@ -70,10 +70,11 @@ src/
 ### Sales invoices (`/api/v1/sales-invoices`)
 
 - Create cash or customer invoices with line items, discount, and payment
-- List and get invoices; cancel an invoice (reverses stock and the debt applied at save)
+- Update an invoice (reconciles stock, customer balance, and linked payments)
+- List and get invoices; cancel an invoice (reverses stock and customer debt)
 - Invoice numbers are `INV-NNNN`, sequenced by Cairo year
-- Download an Arabic PDF, or a WhatsApp share payload
-- Public PDF download by share token (no login)
+- Get a WhatsApp share payload with a public receipt link
+- Public invoice receipt by share token (no login)
 
 ### Payments (`/api/v1/payments`)
 
@@ -122,9 +123,9 @@ src/
 - Passwords hashed with argon2id
 - Helmet, CORS, Throttler (rate limiting)
 - class-validator / class-transformer
-- Puppeteer for invoice PDFs
+- Client-side PDF generation on frontend
 
-Successful JSON responses use `{ success: true, data }`. PDF routes return raw `application/pdf` and are not wrapped.
+Successful JSON responses use `{ success: true, data }`.
 
 ## Prerequisites
 
@@ -164,10 +165,10 @@ copy .env.example .env
 | `JWT_REFRESH_SECRET`        | Secret for signing refresh tokens                    |
 | `JWT_ACCESS_EXPIRES_IN`     | Access token lifetime (e.g. `10m`)                   |
 | `JWT_REFRESH_EXPIRES_IN`    | Refresh token lifetime (e.g. `21d`)                  |
-| `PUBLIC_API_BASE_URL`       | Public base URL used in PDF and WhatsApp links       |
+| `FRONTEND_URL`              | Base URL of frontend for public WhatsApp receipts    |
+| `CORS_ORIGIN`               | Comma-separated browser origins (default `http://localhost:3001`) |
 | `THROTTLE_DISABLED`         | Set `true` to disable rate limits                    |
 | `THROTTLE_AUTH_LIMIT`       | Auth requests per minute per IP (default `10`)       |
-| `THROTTLE_PUBLIC_PDF_LIMIT` | Public PDF requests per minute per IP (default `20`) |
 | `THROTTLE_GLOBAL_LIMIT`     | Other requests per minute per IP (default `300`)     |
 
 CORS allows `http://localhost:3001` (the frontend). If the frontend also uses port `3000`, run Next on another port.
@@ -191,7 +192,7 @@ Default URL: [http://localhost:3000/api/v1](http://localhost:3000/api/v1)
 
 ## API map
 
-All routes except **login**, **refresh**, **logout**, **health**, and the **public invoice PDF** require:
+All routes except **login**, **refresh**, **logout**, **health**, and the **public invoice receipt** require:
 
 `Authorization: Bearer <accessToken>`
 
@@ -267,15 +268,15 @@ Supplier list query params: `q`, `hasDebt`, `isActive`, `page`, `limit`.
 
 ### Sales invoices
 
-| Method | Path                                       | Auth | Description               |
-| ------ | ------------------------------------------ | ---- | ------------------------- |
-| `POST` | `/api/v1/sales-invoices`                   | Both | Create invoice            |
-| `GET`  | `/api/v1/sales-invoices`                   | Both | List invoices             |
-| `GET`  | `/api/v1/sales-invoices/:id`               | Both | Get invoice               |
-| `GET`  | `/api/v1/sales-invoices/:id/pdf`           | Both | Download PDF              |
-| `GET`  | `/api/v1/sales-invoices/:id/share`         | Both | WhatsApp / share payload  |
-| `POST` | `/api/v1/sales-invoices/:id/cancel`        | Both | Cancel invoice            |
-| `GET`  | `/api/v1/public/sales-invoices/:token/pdf` | No   | Public PDF by share token |
+| Method  | Path                                   | Auth | Description                                         |
+| ------- | -------------------------------------- | ---- | --------------------------------------------------- |
+| `POST`  | `/api/v1/sales-invoices`               | Both | Create invoice                                      |
+| `GET`   | `/api/v1/sales-invoices`               | Both | List invoices                                       |
+| `GET`   | `/api/v1/sales-invoices/:id`           | Both | Get invoice                                         |
+| `PATCH` | `/api/v1/sales-invoices/:id`           | Both | Update invoice (reconciles stock, balance, payment) |
+| `GET`   | `/api/v1/sales-invoices/:id/share`     | Both | WhatsApp / share payload                            |
+| `POST`  | `/api/v1/sales-invoices/:id/cancel`    | Both | Cancel invoice                                      |
+| `GET`   | `/api/v1/public/sales-invoices/:token` | No   | Public invoice receipt JSON by share token          |
 
 Invoice list query params: `q`, `status`, `period`, `date`, `page`, `limit`.
 

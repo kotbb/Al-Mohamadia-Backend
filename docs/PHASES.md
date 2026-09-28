@@ -144,9 +144,8 @@ Modules: `src/modules/customers`, `suppliers`.
   payments via `reversedAt` / `reversedBy`)
 - [x] Customer merge re-points `SalesInvoice` / `Payment` to target
 - [x] Dev seed: `npm run seed:invoices`
-- [x] PDF generation (`GET .../pdf`) + public tokenized PDF
-  (`GET /public/sales-invoices/:token/pdf`) + WhatsApp share payload
-  (`GET .../share`)
+- [x] Invoice editing (`PATCH /sales-invoices/:id`): transactional stock revert & reapply, customer balance adjustment, in-place payment update, audit `invoice_updated`
+- [x] Client-side A4 PDF generation + public tokenized JSON receipt (`GET /public/sales-invoices/:token`) + WhatsApp share payload (`GET .../share`)
 
 **Frontend** — *Done*
 
@@ -154,23 +153,24 @@ Modules: `src/modules/customers`, `suppliers`.
   with dimension fields shown conditionally for `per_cubic_meter`, live
   totals, discount, paid/remaining
 - [x] Invoice list with filters + search, total sales summary card, and primary "فاتورة جديدة" action opening the creation modal
-- [x] Invoice detail view; Save / Save & Print; PDF export / WhatsApp share
+- [x] Invoice detail view; Save / Save & Print (auto-print preview modal); client-side PDF export / WhatsApp share
 - [x] Cancel invoice action
+- [x] Public receipt page (`/[locale]/invoices/public/[token]`) with client-side print and PDF download
 
 **Done when:** you can create a real invoice end-to-end, see stock and (if
-applicable) customer debt update correctly, and cancel it with correct
-reversals.
+applicable) customer debt update correctly, edit it with atomic stock/balance reconciliation, and cancel it with correct reversals.
 
 **Backend API** (`/api/v1`, JWT + `admin` | `super_admin`):
 
 | Resource | Endpoints |
 |----------|-----------|
-| Sales Invoices | `POST/GET /sales-invoices`, `GET /sales-invoices/:id`, `POST /sales-invoices/:id/cancel` |
-| Share & PDF | `GET /sales-invoices/:id/pdf`, `GET /public/sales-invoices/:token/pdf`, `GET /sales-invoices/:id/share` |
+| Sales Invoices | `POST/GET /sales-invoices`, `GET /sales-invoices/:id`, `PATCH /sales-invoices/:id`, `POST /sales-invoices/:id/cancel` |
+| Share & Public Receipt | `GET /public/sales-invoices/:token`, `GET /sales-invoices/:id/share` |
 
 List query params: `status`, `period`, `date`, `q`, `page`, `limit`.
 List response: `{ items, meta, summary: { totalAmount } }` (`totalAmount` is saved invoices matching the other filters).
 Create body: `{ customerId?, type, lines: [{ itemId, quantity, piecePrice?, width?, length?, thickness?, note? }], discount?, paid?, paymentMethod?, paymentNotes? }`.
+Update body: `UpdateSalesInvoiceDto` (same shape as create, validates and reconciles stock, customer balance, and linked payments).
 
 Module: `src/modules/sales-invoices`.
 
@@ -381,9 +381,10 @@ Module: `src/modules/audit` (backend).
 - Loading / error / empty states everywhere
 - API hardening: rate limiting, input validation edge cases, consistent
   error responses
-- One in-process sales-invoice PDF at a time (HTTP 429 when a print is
-  already running). Chromium comes from the local Puppeteer install, the
-  Docker `chromium` binary, or `@sparticuz/chromium` on Vercel.
+- Zero backend cold-start footprint: Invoice printing and PDF downloads run
+  entirely client-side on the frontend via HTML5 print and `html2pdf.js`,
+  eliminating heavy Chromium and Puppeteer headless browser dependencies from
+  the backend and avoiding Vercel serverless execution timeout limits.
 - Preview deploy: personal Vercel Hobby (one project per repo, hosts from
   env) and portable Compose. Compose reads each repo's `.env`. On Vercel,
   `MONGO_URI` ends in `/prod`.

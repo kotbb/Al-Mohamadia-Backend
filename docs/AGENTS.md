@@ -98,7 +98,7 @@ Domains (ownership):
 | Categories / items / prices | `categories`, `items` | `ItemPriceHistory` on price/cost change *(Phase 2)* |
 | Customers | `customers` | Balance (مديونية), merge duplicates |
 | Suppliers | `suppliers` | Amount owed |
-| Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, cancel, PDF + public share token / WhatsApp payload |
+| Sales invoices | `sales-invoices` | Lines, discount, paid/remaining, update, cancel, client-side PDF + public share receipt / WhatsApp payload |
 | Payments | `payments` | On-invoice + standalone debt payments |
 | Purchases | `purchases` | Restock; stock + supplier owed |
 | Inventory | `inventory` | Stock list, manual جرد recorded on `AuditLog`, valuation |
@@ -242,11 +242,11 @@ Hard rules — never weaken for convenience.
 - Paginate list endpoints (invoices, customers, audit log, stock).
 - Dashboard aggregations should be targeted (date ranges), not full-table
   scans of all history when filters exist.
-- Keep invoice create/cancel transactional and short-lived — no long
+- Keep invoice create/update/cancel transactional and short-lived — no long
   external calls inside the Mongo session.
-- PDF download routes use `@SkipResponseEnvelope()` so binary
-  `application/pdf` is not wrapped in `{ success, data }`. Public share
-  PDFs use `@Public()` + `pdfShareToken` (see `PUBLIC_API_BASE_URL`).
+- Invoice PDFs are rendered client-side on the frontend; public receipt uses
+  `@Public()` `GET /public/sales-invoices/:token` returning self-contained JSON
+  (see `FRONTEND_URL` for public WhatsApp receipt URL).
 - Do not add Redis, Bull, or a second caching stack unless explicitly
   requested.
 

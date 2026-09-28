@@ -1,12 +1,11 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
 
-const THROTTLE_BUCKETS = ['auth', 'publicPdf', 'global'] as const;
+const THROTTLE_BUCKETS = ['auth', 'global'] as const;
 type ThrottleBucket = (typeof THROTTLE_BUCKETS)[number];
 
 const LIMIT_ENV: Record<ThrottleBucket, string> = {
   auth: 'THROTTLE_AUTH_LIMIT',
-  publicPdf: 'THROTTLE_PUBLIC_PDF_LIMIT',
   global: 'THROTTLE_GLOBAL_LIMIT',
 };
 
@@ -50,9 +49,6 @@ export class AppThrottlerGuard extends ThrottlerGuard {
 
     if (request.method === 'POST' && /^\/api\/v1\/auth\/(login|refresh|logout)$/.test(path)) {
       return 'auth';
-    }
-    if (request.method === 'GET' && /^\/api\/v1\/public\/sales-invoices\/[^/]+\/pdf$/.test(path)) {
-      return 'publicPdf';
     }
     return 'global';
   }

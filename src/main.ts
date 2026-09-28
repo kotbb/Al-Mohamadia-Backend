@@ -4,12 +4,12 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
-function corsOrigins(): string[] {
+function corsOrigin(): string {
   const raw = process.env.CORS_ORIGIN ?? 'http://localhost:3001';
   return raw
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\/$/, '');
 }
 
 async function bootstrap() {
@@ -25,11 +25,18 @@ async function bootstrap() {
     }),
   );
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.set('trust proxy', 1);
 
   app.enableCors({
-    origin: corsOrigins(),
+    origin: corsOrigin(),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
 
   await app.listen(process.env.PORT ?? 3000);

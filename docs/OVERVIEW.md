@@ -29,7 +29,7 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 1 | Done | `auth` (login, refresh, logout), `users` (admin CRUD, `GET /users/me`) |
 | 2 | Done | `categories`, `items` — see [PHASES.md](./PHASES.md#phase-2--categories-items--pricing) |
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
-| 4 | Done | `sales-invoices` — create/list/get/cancel/pdf/share + public token PDF — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
+| 4 | Done | `sales-invoices` — create/list/get/update/cancel/share + public token receipt — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 | 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
 | 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, manual stock adjustments recorded on the audit log (`GET /inventory/stock`, `GET /inventory/valuation`, `POST /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
@@ -43,7 +43,7 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | ------------------- | ---------------------------------------------------------------------------- |
 | **Auth & users**    | Login, refresh, logout; `super_admin` manages admins; `admin` runs the shop  |
 | **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, base reference price *(Phase 2 — live)* |
-| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, cancel, Arabic PDF + WhatsApp share link *(Phase 4 — live)* |
+| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, update, cancel, client-side A4 PDF + WhatsApp share link *(Phase 4 — live)* |
 | **Customer payments** | Payments on new sales + standalone debt payments against customer balance *(Phase 5 — live)* |
 | **Customers**       | CRUD, running مديونية, search, merge duplicates *(Phase 3 — live)*           |
 | **Suppliers**       | CRUD, amount owed, search, merge duplicates *(Phase 3 — live)*               |
@@ -172,10 +172,9 @@ See [`.env.example`](../.env.example) for the template.
 | `JWT_REFRESH_SECRET`     | Refresh token signing secret (Phase 1) |
 | `JWT_ACCESS_EXPIRES_IN`  | e.g. `10m` (Phase 1)                   |
 | `JWT_REFRESH_EXPIRES_IN` | e.g. `21d` (Phase 1)                   |
-| `PUBLIC_API_BASE_URL`    | Absolute API origin for WhatsApp/public PDF links (default `http://localhost:3000`) |
+| `FRONTEND_URL`           | Base URL of frontend application for public WhatsApp receipts (default `http://localhost:3001`) |
 | `CORS_ORIGIN`            | Comma-separated browser origins (default `http://localhost:3001`) |
-| `SUPER_ADMIN_USERNAME`   | Seed script only (`seed:super-admin`)  |
-| `SUPER_ADMIN_PASSWORD`   | Seed script only (`seed:super-admin`)  |
+
 
 ### Seed scripts (development)
 
