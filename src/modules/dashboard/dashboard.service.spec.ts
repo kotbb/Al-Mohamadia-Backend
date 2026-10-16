@@ -10,7 +10,7 @@ import { Payment } from '../payments/schemas/payment.schema';
 import { OperatingExpense } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardService } from './dashboard.service';
-import { GetDashboardQueryDto } from './dto/get-dashboard-query.dto';
+import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
 
 function pipelineIncludesRound6(pipeline: unknown[]): boolean {
   const json = JSON.stringify(pipeline);

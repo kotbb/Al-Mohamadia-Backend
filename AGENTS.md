@@ -88,6 +88,8 @@ src/modules/{feature}/
   {feature}.service.spec.ts    # colocated unit tests when useful
   schemas/
   dto/
+    request/                 # body/query inputs and nested input validation
+    response/                # API response contracts
 ```
 
 Domains (ownership):
@@ -260,7 +262,8 @@ Hard rules — never weaken for convenience.
 |---|---|---|
 | HTTP endpoints | feature `*.controller.ts` | Guards, transport input, delegate to the service |
 | Application operations | feature `*.service.ts` | Business orchestration, queries, transactions, audit |
-| Request/response validation | feature `dto/` | Transport contracts and decorators |
+| Request validation | feature `dto/request/` | Body/query contracts, decorators, nested input DTOs |
+| Response contracts | feature `dto/response/` | API output contracts and nested response DTOs |
 | Persistence model | feature `schemas/` | Mongoose schemas and indexes |
 | Named internal contracts | feature `types/` | Aggregation rows, internal input/result types |
 | Pure transformations/query construction | feature `utils/` | Parsing, mappings, Mongo expressions and pipelines |
@@ -268,6 +271,7 @@ Hard rules — never weaken for convenience.
 | Cross-feature behavior | `src/shared/` | Only concerns with established cross-feature ownership |
 
 - Services must not declare named type aliases/interfaces or standalone helper functions (including arrow helpers). Import those from the owning feature's `types/` or `utils/`.
+- Keep DTO files inside `dto/request/` or `dto/response/`, never directly in `dto/`. Request DTOs include create/update commands, query filters, and nested input objects; response DTOs describe returned payloads. Preserve the feature owner and update all imports when moving a DTO.
 - Private methods that orchestrate service operations may stay in the service. Small inline parameter shapes may stay beside their consumer. Do not extract merely to meet a line-count target.
 - Keep Mongo pipeline builders pure and typed with `PipelineStage[]`; execute them through injected models in services. Feature-specific expressions remain feature-owned.
 - Search existing feature/shared code before adding helpers. Promote to shared ownership only when actual callers in multiple features establish the need.

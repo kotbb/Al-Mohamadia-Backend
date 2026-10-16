@@ -4,9 +4,9 @@ import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import type { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../shared/pipes/parse-object-id/parse-object-id.pipe';
-import { CreatePurchaseInvoiceDto } from './dto/create-purchase-invoice.dto';
-import { ListPurchaseInvoicesQueryDto } from './dto/list-purchase-invoices-query.dto';
-import { PurchaseInvoiceListResponseDto, PurchaseInvoiceResponseDto } from './dto/purchase-invoice-response.dto';
+import { CreatePurchaseInvoiceDto } from './dto/request/create-purchase-invoice.dto';
+import { ListPurchaseInvoicesQueryDto } from './dto/request/list-purchase-invoices-query.dto';
+import { PurchaseInvoiceListResponseDto, PurchaseInvoiceResponseDto } from './dto/response/purchase-invoice-response.dto';
 import { PurchasesService } from './purchases.service';
 
 @Controller('purchases')

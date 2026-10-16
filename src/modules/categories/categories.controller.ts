@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
+import { CreateCategoryDto } from './dto/request/create-category.dto';
+import { UpdateCategoryDto } from './dto/request/update-category.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

@@ -2,9 +2,9 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
-import { CategoryResponseDto } from './dto/category-response.dto';
+import { CreateCategoryDto } from './dto/request/create-category.dto';
+import { UpdateCategoryDto } from './dto/request/update-category.dto';
+import { CategoryResponseDto } from './dto/response/category-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { checkMongoId } from '../../shared/utils/check-mongo-id/check-mongo-id.util';

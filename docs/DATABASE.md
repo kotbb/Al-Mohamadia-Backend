@@ -28,7 +28,7 @@ schema changes.
 | Field | Type | Notes |
 |---|---|---|
 | name | string | required |
-| phone | string \| null | optional; supplied values normalized (trim + strip spaces/dashes), unique among non-deleted records |
+| phone | string \| null | optional; new/changed Egyptian mobiles normalized to English local digits, unique among non-deleted records |
 | address | string \| null | optional; trimmed; empty string stored as null |
 | balance | number | denormalized running debt (مديونية), default 0; settable **only on create** as opening balance (≥ 0); never accepted on PATCH |
 | isActive | boolean | deactivation flag (allowed even when balance ≠ 0) |
@@ -463,8 +463,7 @@ Customer and supplier create requests may omit `phone` or send `null`/blank.
 Missing phones are stored and returned as `null`. Updates and merge overrides
 preserve the phone when omitted; `null` or blank clears it. Supplied numbers
 retain normalization and uniqueness among non-deleted records. Fresh databases
-use the partial customer index above. Existing indexes are not migrated by this
-change, so an old customer index may still reject a second missing phone.
+use the partial customer index above. Existing indexes are repaired only by the explicit check/repair command in [PHONE-VALIDATION.md](PHONE-VALIDATION.md); application startup does not migrate them.
 
 Item create/update bodies accept `dimensionDefaults` with independent arrays for
 thickness, width, and length in meters. Omitted axes become empty arrays; an
@@ -491,4 +490,10 @@ POST /api/v1/items/:id/dimension-defaults accepts { dimension: thickness | width
 
 ## Planned recurrence (not installed)
 
-Recurring schedules and individual occurrences are proposed additions, not current collections. Existing OperatingExpense records remain paid entries. See [the recurring expense design](./RECURRING-EXPENSES.md); no new recurrence indexes or migrations have been applied.
+Recurring schedules and individual occurrences are proposed additions, not current collections. Existing OperatingExpense records remain paid entries. See [the recurring expense design](./PHASES.md#planned-recurring-operating-expenses); no new recurrence indexes or migrations have been applied.
+
+## Invoice navigation and receipt presentation contracts
+
+`GET /sales-invoices/:id/neighbors` retains nullable `previousId`/`nextId` for the same customer, ordered by createdAt and _id. It adds nullable `previousByNumberId`/`nextByNumberId` for all numeric INV-prefixed invoice numbers, including cancelled/cash sales and skipping gaps. The non-unique `invoice_number_navigation` index uses `{ invoiceNumber: 1 }` with `{ locale: "en", numericOrdering: true }`, matching the numeric neighbor queries. Existing number generation and records are unchanged.
+
+Authenticated and public receipt lines expose resolved `pricingModeSnapshot`, including the established legacy fallback. `piecePrice` remains the saved piece/m³ rate. Clients calculate display-only cubic per-piece price from six-decimal meter volume × saved rate; explicit piece lines retain their saved rate even with dimensions. Persisted line totals and invoice totals remain authoritative and are never recalculated from the rounded displayed unit price.

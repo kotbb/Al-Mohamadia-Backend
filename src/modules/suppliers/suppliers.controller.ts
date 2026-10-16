@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
-import { CreateSupplierDto } from './dto/create-supplier.dto';
-import { UpdateSupplierDto } from './dto/update-supplier.dto';
-import { MergeSuppliersDto } from './dto/merge-suppliers.dto';
-import { ListSuppliersQueryDto } from './dto/list-suppliers-query.dto';
+import { CreateSupplierDto } from './dto/request/create-supplier.dto';
+import { UpdateSupplierDto } from './dto/request/update-supplier.dto';
+import { MergeSuppliersDto } from './dto/request/merge-suppliers.dto';
+import { ListSuppliersQueryDto } from './dto/request/list-suppliers-query.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

@@ -7,7 +7,7 @@ import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { SalesInvoicePeriod } from '../../shared/enums/sales-invoice-period.enum';
 import { AuditService } from '../audit/audit.service';
 import { Customer } from '../customers/schemas/customer.schema';
-import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
+import { ListPaymentsQueryDto } from './dto/request/list-payments-query.dto';
 import { PaymentStatusFilter } from './enums/payment-status-filter.enum';
 import { PaymentTypeFilter } from './enums/payment-type-filter.enum';
 import { PaymentsService } from './payments.service';

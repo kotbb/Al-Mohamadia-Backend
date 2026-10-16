@@ -32,7 +32,7 @@ const CUSTOMER_SEEDS: CustomerSeed[] = [
 const SUPPLIER_SEEDS: SupplierSeed[] = [
   {
     name: 'مؤسسة الخشب الحديث',
-    phone: '0223456789',
+    phone: '01223456789',
     address: 'القاهرة، شبرا الخيمة',
     amountOwed: 8500,
   },

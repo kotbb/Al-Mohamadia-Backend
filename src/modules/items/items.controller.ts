@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ItemsService } from './items.service';
-import { AddDimensionDefaultDto } from './dto/add-dimension-default.dto';
-import { CreateItemDto } from './dto/create-item.dto';
-import { UpdateItemDto } from './dto/update-item.dto';
-import { UpdateItemPricingDto } from './dto/update-item-pricing.dto';
+import { AddDimensionDefaultDto } from './dto/request/add-dimension-default.dto';
+import { CreateItemDto } from './dto/request/create-item.dto';
+import { UpdateItemDto } from './dto/request/update-item.dto';
+import { UpdateItemPricingDto } from './dto/request/update-item-pricing.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

@@ -247,7 +247,7 @@ Module: `src/modules/payments`.
 - [x] Supplier detail view enhanced with purchase history, payments history, and quick record payment action
 - [x] Customer "Record payment" modal enhanced with debtor customer droplist and live autocomplete search
 - [x] Contextual navigation: "Back to list" returns to originating list (`/payments`, `/supplier-payments`, `/purchases`) via `?from=...` query parameter
-- [x] 3-Hub navigation structure in sidebar and horizontal tab bar: Sales & Customers, Procurement & Suppliers, Inventory & Catalog
+- [x] 3-Hub navigation structure in sidebar and horizontal tab bar: Sales & Customers, Purchases & Suppliers, Inventory & Catalog
 - [x] Complete bilingual Arabic / English translations and responsive token-based styling
 
 **Done when:** a purchase from a supplier increases stock and the
@@ -442,3 +442,23 @@ Module: `src/modules/audit` (backend).
 ## Planned: recurring operating expenses
 
 Not implemented: configurable repeat intervals, first/optional end dates, due/overdue occurrences, one full payment per occurrence, skip reasons, pause/resume/stop, and dashboard due counts. Only confirmed payments will enter the existing paid ledger. Email reminders and partial payments are deferred. No recurrence collections, endpoints or scheduler exist yet.
+
+## Navigation and receipt presentation
+
+- [x] Invoice-first Sales & Customers and Purchases & Suppliers hubs; clickable customer/supplier/sales/purchase rows retain independent nested actions and brown primary-link hover.
+- [x] Expense ledger/detail use stable localized date-only formatting.
+- [x] Numeric invoice neighbors supplement existing customer chronology with cancelled/cash invoices, gap handling and numeric collation.
+- [x] Resolved receipt pricing snapshots support cubic per-piece display without changing stored rates/totals.
+- [ ] Manual language/mobile/hover/export checks remain separate from automated verification.
+
+
+### Validation and invoice navigation refinement
+
+Implemented optional Egyptian mobile validation, preserved unchanged legacy phones, targeted phone-index check/repair, trimmed required-text/null guards, consistent opening/item monetary precision, and finite positive cubic write guards across the two repositories. Invoice navigation uses a mode selector and two arrows; export settings guidance is excluded from receipt outputs. Existing records are not rewritten. Manual English/Arabic/mobile checks remain user-run.
+
+### DTO organization
+
+All feature DTO directories separate incoming body/query contracts into
+`dto/request/` and returned contracts into `dto/response/`. Nested input DTOs
+stay with requests. Controllers, services, tests and cross-feature imports use
+the new paths. This refactor preserves validation, API payloads and persistence.

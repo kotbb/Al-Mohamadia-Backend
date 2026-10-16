@@ -64,14 +64,14 @@ src/
 - Create, list, get, update, and soft-delete customers
 - Customer balance (مديونية) is maintained by the server
 - Search, filter by debt and active status, and merge duplicate customers
-- Optional nullable phone; omitted updates preserve it, explicit null clears it
+- Optional Egyptian mobile phone (local/+20); omitted updates preserve it, explicit null clears it
 
 ### Suppliers (`/api/v1/suppliers`)
 
 - Create, list, get, update, and soft-delete suppliers
 - Amount owed is maintained by the server
 - Search, filter by debt and active status, and merge duplicate suppliers
-- Optional nullable phone; supplied numbers remain normalized and unique
+- Optional Egyptian mobile phone (local/+20); supplied numbers remain normalized and unique
 
 ### Sales invoices (`/api/v1/sales-invoices`)
 
@@ -81,9 +81,10 @@ src/
 - Invoice numbers are `INV-NNNN`, sequenced by Cairo year
 - Get a WhatsApp share payload with a public receipt link
 - Public invoice receipt by share token (no login)
-- Authenticated receipt JSON for frontend PNG A5 / PDF A4 export and same-customer previous/next navigation
+- Authenticated receipt JSON for frontend PNG A5 / PDF A4 export, with numeric and same-customer previous/next navigation
 - Export rendering runs in the frontend; the API does not generate PDF or PNG files
 - Server-controlled pricing mode snapshots preserve piece/cubic behavior during updates and reversals; legacy lines retain fallback support
+- Public/private receipt lines include resolved `pricingModeSnapshot`; clients display cubic volume × saved rate as price per piece without changing stored rates/totals
 
 ### Payments (`/api/v1/payments`)
 
@@ -305,13 +306,16 @@ Supplier list query params: `q`, `hasDebt`, `isActive`, `page`, `limit`.
 | `PATCH` | `/api/v1/sales-invoices/:id`           | Both | Update invoice (reconciles stock, balance, payment) |
 | `GET`   | `/api/v1/sales-invoices/:id/share`     | Both | WhatsApp / share payload                            |
 | `GET`   | `/api/v1/sales-invoices/:id/receipt`   | Both | Self-contained receipt data for export              |
-| `GET`   | `/api/v1/sales-invoices/:id/neighbors` | Both | Previous/next invoice IDs for the same customer     |
+| `GET`   | `/api/v1/sales-invoices/:id/neighbors` | Both | Customer and invoice-number navigation IDs     |
 | `POST`  | `/api/v1/sales-invoices/:id/cancel`    | Both | Cancel invoice                                      |
 | `GET`   | `/api/v1/public/sales-invoices/:token` | No   | Public invoice receipt JSON by share token          |
 
 Invoice list query params: `q`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
-Cash sales have no customer neighbors.
+Neighbor responses retain `previousId`/`nextId` for customer chronology and add
+`previousByNumberId`/`nextByNumberId` across numeric invoice order. Cash sales have
+no customer neighbors but support numeric navigation. Numeric order includes cancelled
+invoices, skips gaps and returns null at boundaries.
 
 `period` is `day`, `week`, `month`, or `year`. When `period` is set, `date` is `YYYY-MM-DD`.
 
@@ -442,8 +446,9 @@ npm run seed:expenses     # starter expense categories; preserves existing edits
 
 Use mock catalog/party/invoice/purchase/inventory seeds only against an intended
 development database. No seeds or migrations run automatically at application startup.
-Existing customer databases may retain the older phone index; the updated schema
-defines the nullable-phone index for fresh databases without rewriting records.
+Existing databases may retain an older phone index. Use `npm run check:phone-indexes`
+and the explicit `npm run repair:phone-indexes` maintenance command when needed;
+see [phone validation and index repair](docs/PHONE-VALIDATION.md). Neither command rewrites records.
 
 ## Contributor documentation
 

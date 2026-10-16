@@ -7,9 +7,9 @@ import { cairoCustomRange, cairoPeriodRange } from '../../shared/utils/period/ca
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { AuditService } from '../audit/audit.service';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
-import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
-import { PaymentListResponseDto, PaymentResponseDto } from './dto/payment-response.dto';
-import { RecordPaymentDto } from './dto/record-payment.dto';
+import { ListPaymentsQueryDto } from './dto/request/list-payments-query.dto';
+import { PaymentListResponseDto, PaymentResponseDto } from './dto/response/payment-response.dto';
+import { RecordPaymentDto } from './dto/request/record-payment.dto';
 import { PaymentStatusFilter } from './enums/payment-status-filter.enum';
 import { PaymentTypeFilter } from './enums/payment-type-filter.enum';
 import { Payment, PaymentDocument } from './schemas/payment.schema';

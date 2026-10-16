@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CustomersService } from './customers.service';
-import { CreateCustomerDto } from './dto/create-customer.dto';
-import { UpdateCustomerDto } from './dto/update-customer.dto';
-import { MergeCustomersDto } from './dto/merge-customers.dto';
-import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
+import { CreateCustomerDto } from './dto/request/create-customer.dto';
+import { UpdateCustomerDto } from './dto/request/update-customer.dto';
+import { MergeCustomersDto } from './dto/request/merge-customers.dto';
+import { ListCustomersQueryDto } from './dto/request/list-customers-query.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

@@ -2,14 +2,18 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { Supplier, SupplierDocument } from './schemas/supplier.schema';
-import { CreateSupplierDto } from './dto/create-supplier.dto';
-import { UpdateSupplierDto } from './dto/update-supplier.dto';
-import { MergeSuppliersDto } from './dto/merge-suppliers.dto';
-import { ListSuppliersQueryDto } from './dto/list-suppliers-query.dto';
-import { SupplierListResponseDto, SupplierResponseDto } from './dto/supplier-response.dto';
+import { CreateSupplierDto } from './dto/request/create-supplier.dto';
+import { UpdateSupplierDto } from './dto/request/update-supplier.dto';
+import { MergeSuppliersDto } from './dto/request/merge-suppliers.dto';
+import { ListSuppliersQueryDto } from './dto/request/list-suppliers-query.dto';
+import { SupplierListResponseDto, SupplierResponseDto } from './dto/response/supplier-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { normalizeOptionalPhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
+import {
+  assertEgyptianMobile,
+  equivalentMobilePhones,
+  normalizeOptionalPhone,
+} from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { PurchaseInvoice, PurchaseInvoiceDocument } from '../purchases/schemas/purchase-invoice.schema';
@@ -29,11 +33,15 @@ export class SuppliersService {
   public async create(dto: CreateSupplierDto, user: AuthUser): Promise<SupplierResponseDto> {
     const name = dto.name.trim();
     const phone = normalizeOptionalPhone(dto.phone);
+    assertEgyptianMobile(phone);
     const address = normalizeOptionalAddress(dto.address);
     const amountOwed = roundMoney(dto.amountOwed ?? 0);
 
     if (phone) {
-      const existing = await this.supplierModel.findOne({ phone, isDeleted: false }).lean().exec();
+      const existing = await this.supplierModel
+        .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false })
+        .lean()
+        .exec();
       if (existing) {
         throw new ConflictException('Supplier phone already exists');
       }
@@ -137,9 +145,10 @@ export class SuppliersService {
     if (dto.phone !== undefined) {
       const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== supplier.phone) {
+        assertEgyptianMobile(phone);
         if (phone) {
           const existing = await this.supplierModel
-            .findOne({ phone, isDeleted: false, _id: { $ne: supplier._id } })
+            .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: supplier._id } })
             .lean()
             .exec();
           if (existing) {
@@ -270,11 +279,12 @@ export class SuppliersService {
     if (dto.phone !== undefined) {
       const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== target.phone) {
+        assertEgyptianMobile(phone);
         if (phone) {
           const excludedIds = [target._id, ...sources.map((source) => source._id)];
           const existing = await this.supplierModel
             .findOne({
-              phone,
+              phone: { $in: equivalentMobilePhones(phone) },
               isDeleted: false,
               _id: { $nin: excludedIds },
             })

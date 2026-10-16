@@ -4,11 +4,11 @@ import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import type { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../shared/pipes/parse-object-id/parse-object-id.pipe';
-import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
-import { CreateOperatingExpenseDto } from './dto/create-operating-expense.dto';
-import { ListOperatingExpensesQueryDto } from './dto/list-operating-expenses-query.dto';
-import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto';
-import { UpdateOperatingExpenseDto } from './dto/update-operating-expense.dto';
+import { CreateExpenseCategoryDto } from './dto/request/create-expense-category.dto';
+import { CreateOperatingExpenseDto } from './dto/request/create-operating-expense.dto';
+import { ListOperatingExpensesQueryDto } from './dto/request/list-operating-expenses-query.dto';
+import { UpdateExpenseCategoryDto } from './dto/request/update-expense-category.dto';
+import { UpdateOperatingExpenseDto } from './dto/request/update-operating-expense.dto';
 import { OperatingExpensesService } from './operating-expenses.service';
 
 @Controller('operating-expenses')

@@ -6,11 +6,11 @@ import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { AuditService } from '../audit/audit.service';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { Item, ItemDocument } from '../items/schemas/item.schema';
-import { AdjustStockResponseDto } from './dto/adjust-stock-response.dto';
-import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
-import { InventoryValuationResponseDto } from './dto/inventory-valuation-response.dto';
-import { ListStockQueryDto } from './dto/list-stock-query.dto';
-import { StockItemResponseDto, StockListResponseDto } from './dto/stock-list-response.dto';
+import { AdjustStockResponseDto } from './dto/response/adjust-stock-response.dto';
+import { CreateStockAdjustmentDto } from './dto/request/create-stock-adjustment.dto';
+import { InventoryValuationResponseDto } from './dto/response/inventory-valuation-response.dto';
+import { ListStockQueryDto } from './dto/request/list-stock-query.dto';
+import { StockItemResponseDto, StockListResponseDto } from './dto/response/stock-list-response.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
 
 @Injectable()

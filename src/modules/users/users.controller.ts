@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { CreateAdminDto } from './dto/create-admin.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateAdminDto } from './dto/request/create-admin.dto';
+import { UpdateUserDto } from './dto/request/update-user.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

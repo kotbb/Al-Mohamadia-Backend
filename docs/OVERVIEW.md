@@ -15,6 +15,10 @@ codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 
 For coding agents and implementation rules, see [AGENTS.md](../AGENTS.md).
 
+Feature DTOs live in `src/modules/{feature}/dto/request/` for body/query inputs
+and nested validation, or `dto/response/` for returned payloads. Internal
+non-transport contracts remain in the feature's `types/` directory.
+
 > **Note:** Build is phased (vertical slices). See
 > [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–10 are
 > complete** on both apps.
@@ -273,4 +277,9 @@ Operating expenses are paid ledger records, not obligations. Expense CRUD/catego
 
 Authenticated receipt and same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
 
-Recurring expenses are planned only. See [Recurring expense design](./RECURRING-EXPENSES.md) for agreed behavior and proposed collections; no recurrence schema, index, endpoint or scheduler has been installed.
+Recurring expenses are planned only. See [Recurring expense design](./PHASES.md#planned-recurring-operating-expenses) for agreed behavior and proposed collections; no recurrence schema, index, endpoint or scheduler has been installed.
+
+
+### Mobile validation and invoice presentation
+
+Customer/supplier phones accept optional Egyptian mobiles with canonical English local digits; unchanged legacy values remain intact. Text/null/money and invoice calculation guards are tightened. See [phone validation and targeted index maintenance](PHONE-VALIDATION.md).

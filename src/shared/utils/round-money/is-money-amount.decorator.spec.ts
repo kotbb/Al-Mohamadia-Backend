@@ -1,9 +1,9 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateStockAdjustmentDto } from '../../../modules/inventory/dto/create-stock-adjustment.dto';
-import { CreatePurchaseInvoiceDto } from '../../../modules/purchases/dto/create-purchase-invoice.dto';
-import { RecordSupplierPaymentDto } from '../../../modules/supplier-payments/dto/record-supplier-payment.dto';
+import { CreateStockAdjustmentDto } from '../../../modules/inventory/dto/request/create-stock-adjustment.dto';
+import { CreatePurchaseInvoiceDto } from '../../../modules/purchases/dto/request/create-purchase-invoice.dto';
+import { RecordSupplierPaymentDto } from '../../../modules/supplier-payments/dto/request/record-supplier-payment.dto';
 import { IsMoneyAmount } from './is-money-amount.decorator';
 
 const ITEM_ID = '507f1f77bcf86cd799439011';

@@ -1,3 +1,6 @@
+import { validateLineValues } from '../../shared/utils/volume/validate-line-values.util';
+import { InvoiceNeighborsResponseDto } from './dto/response/invoice-neighbors-response.dto';
+import { INVOICE_NUMBER_COLLATION } from './constants/invoice-navigation.constant';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -16,12 +19,12 @@ import { cairoCustomRange, cairoPeriodRange, cairoYearNow } from '../../shared/u
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../../shared/utils/volume/cubic-meter.util';
 import { SHOP_NAME } from './constants/shop.constant';
-import { CreateSalesInvoiceDto, CreateSalesInvoiceLineDto } from './dto/create-sales-invoice.dto';
-import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
-import { ListSalesInvoicesQueryDto } from './dto/list-sales-invoices-query.dto';
-import { SalesInvoiceListResponseDto, SalesInvoiceResponseDto } from './dto/sales-invoice-response.dto';
-import { SalesInvoiceShareResponseDto } from './dto/sales-invoice-share-response.dto';
-import { PublicInvoiceResponseDto } from './dto/public-invoice-response.dto';
+import { CreateSalesInvoiceDto, CreateSalesInvoiceLineDto } from './dto/request/create-sales-invoice.dto';
+import { UpdateSalesInvoiceDto } from './dto/request/update-sales-invoice.dto';
+import { ListSalesInvoicesQueryDto } from './dto/request/list-sales-invoices-query.dto';
+import { SalesInvoiceListResponseDto, SalesInvoiceResponseDto } from './dto/response/sales-invoice-response.dto';
+import { SalesInvoiceShareResponseDto } from './dto/response/sales-invoice-share-response.dto';
+import { PublicInvoiceResponseDto } from './dto/response/public-invoice-response.dto';
 import { InvoiceCounter, InvoiceCounterDocument } from './schemas/invoice-counter.schema';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceDocument } from './schemas/sales-invoice.schema';
@@ -88,6 +91,7 @@ export class SalesInvoicesService {
     const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
 
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
+    if (!Number.isFinite(total)) throw new BadRequestException('Invoice total must be finite');
     const discount = roundMoney(dto.discount ?? 0);
     if (discount < 0 || discount > total) {
       throw new BadRequestException('Discount must be between 0 and total');
@@ -359,6 +363,7 @@ export class SalesInvoicesService {
     const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
 
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
+    if (!Number.isFinite(total)) throw new BadRequestException('Invoice total must be finite');
     const discount = roundMoney(dto.discount ?? 0);
     if (discount < 0 || discount > total) {
       throw new BadRequestException('Discount must be between 0 and total');
@@ -558,24 +563,47 @@ export class SalesInvoicesService {
   }
 
   // Get the previous and next invoice IDs for a given invoice
-  public async getNeighbors(id: string): Promise<{ previousId: string | null; nextId: string | null }> {
+  public async getNeighbors(id: string): Promise<InvoiceNeighborsResponseDto> {
     const invoice = await this.requireInvoiceById(id);
-    if (!invoice.customerId || invoice.type !== SalesInvoiceType.CUSTOMER_SALE) {
-      return { previousId: null, nextId: null };
-    }
-
     const createdAt = invoice.get('createdAt') as Date;
-    const base = { customerId: invoice.customerId, type: SalesInvoiceType.CUSTOMER_SALE };
-    const [previous, next] = await Promise.all([
+    const customerFilter =
+      invoice.customerId && invoice.type === SalesInvoiceType.CUSTOMER_SALE
+        ? { customerId: invoice.customerId, type: SalesInvoiceType.CUSTOMER_SALE }
+        : null;
+    const [previous, next, previousByNumber, nextByNumber] = await Promise.all([
+      customerFilter
+        ? this.salesInvoiceModel
+            .findOne({
+              ...customerFilter,
+              $or: [{ createdAt: { $lt: createdAt } }, { createdAt, _id: { $lt: invoice._id } }],
+            })
+            .sort({ createdAt: -1, _id: -1 })
+            .select('_id')
+            .lean()
+            .exec()
+        : Promise.resolve(null),
+      customerFilter
+        ? this.salesInvoiceModel
+            .findOne({
+              ...customerFilter,
+              $or: [{ createdAt: { $gt: createdAt } }, { createdAt, _id: { $gt: invoice._id } }],
+            })
+            .sort({ createdAt: 1, _id: 1 })
+            .select('_id')
+            .lean()
+            .exec()
+        : Promise.resolve(null),
       this.salesInvoiceModel
-        .findOne({ ...base, $or: [{ createdAt: { $lt: createdAt } }, { createdAt, _id: { $lt: invoice._id } }] })
-        .sort({ createdAt: -1, _id: -1 })
+        .findOne({ invoiceNumber: { $regex: /^INV-\d+$/, $lt: invoice.invoiceNumber } })
+        .collation(INVOICE_NUMBER_COLLATION)
+        .sort({ invoiceNumber: -1 })
         .select('_id')
         .lean()
         .exec(),
       this.salesInvoiceModel
-        .findOne({ ...base, $or: [{ createdAt: { $gt: createdAt } }, { createdAt, _id: { $gt: invoice._id } }] })
-        .sort({ createdAt: 1, _id: 1 })
+        .findOne({ invoiceNumber: { $regex: /^INV-\d+$/, $gt: invoice.invoiceNumber } })
+        .collation(INVOICE_NUMBER_COLLATION)
+        .sort({ invoiceNumber: 1 })
         .select('_id')
         .lean()
         .exec(),
@@ -583,6 +611,8 @@ export class SalesInvoicesService {
     return {
       previousId: previous?._id.toString() ?? null,
       nextId: next?._id.toString() ?? null,
+      previousByNumberId: previousByNumber?._id.toString() ?? null,
+      nextByNumberId: nextByNumber?._id.toString() ?? null,
     };
   }
 
@@ -633,6 +663,7 @@ export class SalesInvoicesService {
         const item = itemById.get(line.itemId.toString());
         return {
           itemLabel: item?.name ?? '',
+          pricingModeSnapshot: resolveLinePricingMode(line),
           quantity: line.quantity,
           width: line.width ?? null,
           length: line.length ?? null,
@@ -704,6 +735,8 @@ export class SalesInvoicesService {
       widthM: width,
       lengthM: length,
     });
+
+    validateLineValues({ isCubic, thickness, width, length, stockDelta, lineTotal });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
 

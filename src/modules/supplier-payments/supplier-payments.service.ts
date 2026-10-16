@@ -9,9 +9,9 @@ import { AuditService } from '../audit/audit.service';
 import { PaymentStatusFilter } from '../payments/enums/payment-status-filter.enum';
 import { PaymentTypeFilter } from '../payments/enums/payment-type-filter.enum';
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
-import { ListSupplierPaymentsQueryDto } from './dto/list-supplier-payments-query.dto';
-import { SupplierPaymentListResponseDto, SupplierPaymentResponseDto } from './dto/supplier-payment-response.dto';
-import { RecordSupplierPaymentDto } from './dto/record-supplier-payment.dto';
+import { ListSupplierPaymentsQueryDto } from './dto/request/list-supplier-payments-query.dto';
+import { SupplierPaymentListResponseDto, SupplierPaymentResponseDto } from './dto/response/supplier-payment-response.dto';
+import { RecordSupplierPaymentDto } from './dto/request/record-supplier-payment.dto';
 import { SupplierPayment, SupplierPaymentDocument } from './schemas/supplier-payment.schema';
 import { SupplierPaymentListFilter } from './types/supplier-payment-list-filter.type';
 

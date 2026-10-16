@@ -2,16 +2,20 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
-import { CreateCustomerDto } from './dto/create-customer.dto';
-import { UpdateCustomerDto } from './dto/update-customer.dto';
-import { MergeCustomersDto } from './dto/merge-customers.dto';
-import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
-import { CustomerListResponseDto, CustomerResponseDto } from './dto/customer-response.dto';
+import { CreateCustomerDto } from './dto/request/create-customer.dto';
+import { UpdateCustomerDto } from './dto/request/update-customer.dto';
+import { MergeCustomersDto } from './dto/request/merge-customers.dto';
+import { ListCustomersQueryDto } from './dto/request/list-customers-query.dto';
+import { CustomerListResponseDto, CustomerResponseDto } from './dto/response/customer-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { normalizeOptionalPhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
+import {
+  assertEgyptianMobile,
+  equivalentMobilePhones,
+  normalizeOptionalPhone,
+} from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { CustomerListFilter } from './types/customer-list-filter.type';
@@ -32,8 +36,12 @@ export class CustomersService {
   public async create(dto: CreateCustomerDto, user: AuthUser): Promise<CustomerResponseDto> {
     const name = dto.name.trim();
     const phone = normalizeOptionalPhone(dto.phone);
+    assertEgyptianMobile(phone);
     if (phone) {
-      const existing = await this.customerModel.findOne({ phone, isDeleted: false }).lean().exec();
+      const existing = await this.customerModel
+        .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false })
+        .lean()
+        .exec();
       if (existing) throw new ConflictException('Customer phone already exists');
     }
 
@@ -138,9 +146,10 @@ export class CustomersService {
     if (dto.phone !== undefined) {
       const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== customer.phone) {
+        assertEgyptianMobile(phone);
         if (phone) {
           const existing = await this.customerModel
-            .findOne({ phone, isDeleted: false, _id: { $ne: customer._id } })
+            .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: customer._id } })
             .lean()
             .exec();
           if (existing) {
@@ -269,11 +278,12 @@ export class CustomersService {
     if (dto.phone !== undefined) {
       const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== target.phone) {
+        assertEgyptianMobile(phone);
         if (phone) {
           const excludedIds = [target._id, ...sources.map((source) => source._id)];
           const existing = await this.customerModel
             .findOne({
-              phone,
+              phone: { $in: equivalentMobilePhones(phone) },
               isDeleted: false,
               _id: { $nin: excludedIds },
             })

@@ -1,7 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
-import { RefreshDto } from './dto/refresh.dto';
+import { LoginDto } from './dto/request/login.dto';
+import { RefreshDto } from './dto/request/refresh.dto';
 import { Public } from '../../shared/auth/decorators/public.decorator';
 
 @Controller('auth')

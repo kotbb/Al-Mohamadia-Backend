@@ -4,19 +4,19 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { Item, ItemDocument } from './schemas/item.schema';
 import { ItemPriceHistory, ItemPriceHistoryDocument } from './schemas/item-price-history.schema';
-import { CreateItemDto } from './dto/create-item.dto';
-import { UpdateItemDto } from './dto/update-item.dto';
-import { UpdateItemPricingDto } from './dto/update-item-pricing.dto';
-import { ItemResponseDto } from './dto/item-response.dto';
-import { ItemPriceHistoryResponseDto } from './dto/item-price-history-response.dto';
+import { CreateItemDto } from './dto/request/create-item.dto';
+import { UpdateItemDto } from './dto/request/update-item.dto';
+import { UpdateItemPricingDto } from './dto/request/update-item-pricing.dto';
+import { ItemResponseDto } from './dto/response/item-response.dto';
+import { ItemPriceHistoryResponseDto } from './dto/response/item-price-history-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { CategoriesService } from '../categories/categories.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { checkMongoId } from '../../shared/utils/check-mongo-id/check-mongo-id.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { normalizeDimensionDefaults } from './utils/dimension-defaults.util';
-import { AddDimensionDefaultDto } from './dto/add-dimension-default.dto';
-import { ItemDimensionDefaultsResponseDto } from './dto/item-dimension-defaults-response.dto';
+import { AddDimensionDefaultDto } from './dto/request/add-dimension-default.dto';
+import { ItemDimensionDefaultsResponseDto } from './dto/response/item-dimension-defaults-response.dto';
 
 @Injectable()
 export class ItemsService {

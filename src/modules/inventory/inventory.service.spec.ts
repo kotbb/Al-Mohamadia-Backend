@@ -7,8 +7,8 @@ import { PricingMode } from '../../shared/enums/pricing-mode.enum';
 import { AuditService } from '../audit/audit.service';
 import { Category } from '../categories/schemas/category.schema';
 import { Item } from '../items/schemas/item.schema';
-import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
-import { ListStockQueryDto } from './dto/list-stock-query.dto';
+import { CreateStockAdjustmentDto } from './dto/request/create-stock-adjustment.dto';
+import { ListStockQueryDto } from './dto/request/list-stock-query.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
 import { InventoryService } from './inventory.service';
 

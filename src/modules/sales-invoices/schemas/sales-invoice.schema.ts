@@ -3,6 +3,7 @@ import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../../shared/enums/sales-invoice-type.enum';
+import { INVOICE_NUMBER_COLLATION } from '../constants/invoice-navigation.constant';
 
 export type SalesInvoiceDocument = HydratedDocument<SalesInvoice>;
 
@@ -80,6 +81,10 @@ export class SalesInvoice {
 export const SalesInvoiceSchema = SchemaFactory.createForClass(SalesInvoice);
 
 SalesInvoiceSchema.index({ invoiceNumber: 1 }, { unique: true });
+SalesInvoiceSchema.index(
+  { invoiceNumber: 1 },
+  { name: 'invoice_number_navigation', collation: INVOICE_NUMBER_COLLATION },
+);
 SalesInvoiceSchema.index({ createdAt: -1 });
 SalesInvoiceSchema.index({ customerId: 1 });
 SalesInvoiceSchema.index({ customerId: 1, createdAt: 1, _id: 1 });

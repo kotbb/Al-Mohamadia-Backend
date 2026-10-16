@@ -30,8 +30,8 @@ import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
 import { OperatingExpense, OperatingExpenseDocument } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
-import { DashboardResponseDto } from './dto/dashboard-response.dto';
-import { GetDashboardQueryDto } from './dto/get-dashboard-query.dto';
+import { DashboardResponseDto } from './dto/response/dashboard-response.dto';
+import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
 import { dashboardCustomBuckets } from './utils/dashboard-custom-buckets.util';
 
 @Injectable()

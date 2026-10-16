@@ -627,6 +627,18 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('share and pdf', () => {
+    function mockNeighborQueries(results: Array<{ _id: { toString: () => string } } | null>) {
+      salesInvoiceModel.findOne.mockImplementation(() => {
+        const query = {
+          collation: jest.fn().mockReturnThis(),
+          sort: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockReturnThis(),
+          exec: () => Promise.resolve(results.shift() ?? null),
+        };
+        return query;
+      });
+    }
     it('returns an authenticated receipt with the current customer name', async () => {
       const result = await service.getReceipt(invoiceId);
       expect(result.customerName).toBe('أحمد');
@@ -647,30 +659,37 @@ describe('SalesInvoicesService', () => {
       const previousId = '507f1f77bcf86cd799439005';
       const nextId = '507f1f77bcf86cd799439006';
       const results = [{ _id: { toString: () => previousId } }, { _id: { toString: () => nextId } }];
-      salesInvoiceModel.findOne.mockImplementation((filter: Record<string, unknown>) => ({
-        sort: () => ({ select: () => ({ lean: () => ({ exec: () => Promise.resolve(results.shift()) }) }) }),
-      }));
+      mockNeighborQueries(results);
       const result = await service.getNeighbors(invoiceId);
-      expect(result).toEqual({ previousId, nextId });
-      expect(salesInvoiceModel.findOne).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ previousId, nextId, previousByNumberId: null, nextByNumberId: null });
+      expect(salesInvoiceModel.findOne).toHaveBeenCalledTimes(4);
       expect(salesInvoiceModel.findOne.mock.calls[0][0]).not.toHaveProperty('status');
     });
 
-    it('hides navigation for cash sales', async () => {
+    it('keeps numeric navigation available for cash sales without customer neighbors', async () => {
       salesInvoiceModel.findById.mockReturnValue({
         exec: () => Promise.resolve(makeInvoice({ type: SalesInvoiceType.CASH_SALE, customerId: null })),
       });
-      expect(await service.getNeighbors(invoiceId)).toEqual({ previousId: null, nextId: null });
-      expect(salesInvoiceModel.findOne).not.toHaveBeenCalled();
+      mockNeighborQueries([]);
+      expect(await service.getNeighbors(invoiceId)).toEqual({
+        previousId: null,
+        nextId: null,
+        previousByNumberId: null,
+        nextByNumberId: null,
+      });
+      expect(salesInvoiceModel.findOne).toHaveBeenCalledTimes(2);
     });
 
     it('returns null at a history boundary and uses ID to break timestamp ties', async () => {
       const nextId = '507f1f77bcf86cd799439006';
       const results = [null, { _id: { toString: () => nextId } }];
-      salesInvoiceModel.findOne.mockImplementation(() => ({
-        sort: () => ({ select: () => ({ lean: () => ({ exec: () => Promise.resolve(results.shift()) }) }) }),
-      }));
-      expect(await service.getNeighbors(invoiceId)).toEqual({ previousId: null, nextId });
+      mockNeighborQueries(results);
+      expect(await service.getNeighbors(invoiceId)).toEqual({
+        previousId: null,
+        nextId,
+        previousByNumberId: null,
+        nextByNumberId: null,
+      });
       const previousFilter = salesInvoiceModel.findOne.mock.calls[0][0] as { $or: Record<string, unknown>[] };
       const nextFilter = salesInvoiceModel.findOne.mock.calls[1][0] as { $or: Record<string, unknown>[] };
       expect(previousFilter.$or[1]).toHaveProperty('_id.$lt');

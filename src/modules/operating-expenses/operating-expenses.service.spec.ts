@@ -4,7 +4,7 @@ import { Types } from 'mongoose';
 import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { formatCairoDate } from '../../shared/utils/period/cairo-period.util';
 import { OperatingExpensesService } from './operating-expenses.service';
-import { CreateOperatingExpenseDto } from './dto/create-operating-expense.dto';
+import { CreateOperatingExpenseDto } from './dto/request/create-operating-expense.dto';
 import { OperatingExpenseSchema } from './schemas/operating-expense.schema';
 
 describe('OperatingExpensesService', () => {

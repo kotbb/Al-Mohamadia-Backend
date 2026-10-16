@@ -1,3 +1,4 @@
+import { validateLineValues } from '../../shared/utils/volume/validate-line-values.util';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
@@ -14,9 +15,9 @@ import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { InvoiceCounter, InvoiceCounterDocument } from '../sales-invoices/schemas/invoice-counter.schema';
 import { SupplierPayment, SupplierPaymentDocument } from '../supplier-payments/schemas/supplier-payment.schema';
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
-import { CreatePurchaseInvoiceDto, CreatePurchaseInvoiceLineDto } from './dto/create-purchase-invoice.dto';
-import { ListPurchaseInvoicesQueryDto } from './dto/list-purchase-invoices-query.dto';
-import { PurchaseInvoiceListResponseDto, PurchaseInvoiceResponseDto } from './dto/purchase-invoice-response.dto';
+import { CreatePurchaseInvoiceDto, CreatePurchaseInvoiceLineDto } from './dto/request/create-purchase-invoice.dto';
+import { ListPurchaseInvoicesQueryDto } from './dto/request/list-purchase-invoices-query.dto';
+import { PurchaseInvoiceListResponseDto, PurchaseInvoiceResponseDto } from './dto/response/purchase-invoice-response.dto';
 import { PurchaseInvoice, PurchaseInvoiceDocument } from './schemas/purchase-invoice.schema';
 import { BuiltPurchaseLine } from './types/built-purchase-line.type';
 import { PurchaseInvoiceListFilter } from './types/purchase-invoice-list-filter.type';
@@ -67,6 +68,7 @@ export class PurchasesService {
 
     const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
+    if (!Number.isFinite(total)) throw new BadRequestException('Invoice total must be finite');
     const paid = roundMoney(dto.paid ?? 0);
     const existingDebtPayment = roundMoney(dto.existingDebtPayment ?? 0);
 
@@ -418,6 +420,8 @@ export class PurchasesService {
       widthM: width,
       lengthM: length,
     });
+
+    validateLineValues({ isCubic, thickness, width, length, stockDelta, lineTotal });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
 

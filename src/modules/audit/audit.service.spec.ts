@@ -9,8 +9,8 @@ import { cairoInclusiveDateBounds } from '../../shared/utils/period/cairo-period
 import { User } from '../users/schemas/user.schema';
 import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
-import { CreateAuditLogDto } from './dto/create-audit-log.dto';
-import { ListAuditLogsQueryDto } from './dto/list-audit-logs-query.dto';
+import { CreateAuditLogDto } from './dto/request/create-audit-log.dto';
+import { ListAuditLogsQueryDto } from './dto/request/list-audit-logs-query.dto';
 import { AuditLog } from './schemas/audit-log.schema';
 
 const userId = '65f1a2b3c4d5e6f7a8b9c0d1';

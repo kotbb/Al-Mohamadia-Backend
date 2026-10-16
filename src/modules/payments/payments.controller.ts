@@ -4,9 +4,9 @@ import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import type { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../shared/pipes/parse-object-id/parse-object-id.pipe';
-import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
-import { PaymentListResponseDto, PaymentResponseDto } from './dto/payment-response.dto';
-import { RecordPaymentDto } from './dto/record-payment.dto';
+import { ListPaymentsQueryDto } from './dto/request/list-payments-query.dto';
+import { PaymentListResponseDto, PaymentResponseDto } from './dto/response/payment-response.dto';
+import { RecordPaymentDto } from './dto/request/record-payment.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')

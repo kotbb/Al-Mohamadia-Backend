@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { SalesInvoicesService } from './sales-invoices.service';
-import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
-import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
-import { ListSalesInvoicesQueryDto } from './dto/list-sales-invoices-query.dto';
+import { CreateSalesInvoiceDto } from './dto/request/create-sales-invoice.dto';
+import { UpdateSalesInvoiceDto } from './dto/request/update-sales-invoice.dto';
+import { ListSalesInvoicesQueryDto } from './dto/request/list-sales-invoices-query.dto';
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator';

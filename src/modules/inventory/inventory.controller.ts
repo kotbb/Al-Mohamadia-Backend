@@ -3,11 +3,11 @@ import { CurrentUser } from '../../shared/auth/decorators/current-user.decorator
 import { Roles } from '../../shared/auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import type { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { AdjustStockResponseDto } from './dto/adjust-stock-response.dto';
-import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
-import { InventoryValuationResponseDto } from './dto/inventory-valuation-response.dto';
-import { ListStockQueryDto } from './dto/list-stock-query.dto';
-import { StockListResponseDto } from './dto/stock-list-response.dto';
+import { AdjustStockResponseDto } from './dto/response/adjust-stock-response.dto';
+import { CreateStockAdjustmentDto } from './dto/request/create-stock-adjustment.dto';
+import { InventoryValuationResponseDto } from './dto/response/inventory-valuation-response.dto';
+import { ListStockQueryDto } from './dto/request/list-stock-query.dto';
+import { StockListResponseDto } from './dto/response/stock-list-response.dto';
 import { InventoryService } from './inventory.service';
 
 @Controller('inventory')
