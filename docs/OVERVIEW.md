@@ -13,7 +13,7 @@ truth for stock, balances, invoices, and history.
 Currency: **EGP (ج.م)** only. The API is **locale-agnostic** — return enum
 codes (`saved`, `cancelled`, `cash_sale`, …); the frontend localizes.
 
-For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
+For coding agents and implementation rules, see [AGENTS.md](../AGENTS.md).
 
 > **Note:** Build is phased (vertical slices). See
 > [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–10 are
@@ -33,7 +33,7 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
 | 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
 | 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, manual stock adjustments recorded on the audit log (`GET /inventory/stock`, `GET /inventory/valuation`, `POST /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
-| 8 | Done | `dashboard` — today KPIs, debt strip, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
+| 8 | Done | `dashboard` — today KPIs, debt KPI, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
 | 9 | Done | `audit` — append-only log list and actor filter — see [PHASES.md](./PHASES.md#phase-9--audit-log-ui) |
 | 10 | Done | Rate limits, money validation, error envelope, preview deploy — see [PHASES.md](./PHASES.md#phase-10--polish--hardening) |
 
@@ -42,15 +42,16 @@ For coding agents and implementation rules, see [AGENTS.md](./AGENTS.md).
 | Domain              | Business purpose                                                             |
 | ------------------- | ---------------------------------------------------------------------------- |
 | **Auth & users**    | Login, refresh, logout; `super_admin` manages admins; `admin` runs the shop  |
-| **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, base reference price *(Phase 2 — live)* |
-| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, update, cancel, client-side A4 PDF + WhatsApp share link *(Phase 4 — live)* |
+| **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, meter dimension defaults *(Phase 2 — live)* |
+| **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, update, cancel, client-side PNG A5 / PDF A4 export + WhatsApp sharing *(Phase 4 — live)* |
 | **Customer payments** | Payments on new sales + standalone debt payments against customer balance *(Phase 5 — live)* |
 | **Customers**       | CRUD, running مديونية, search, merge duplicates *(Phase 3 — live)*           |
 | **Suppliers**       | CRUD, amount owed, search, merge duplicates *(Phase 3 — live)*               |
 | **Purchases**       | Restock invoices; increase stock and supplier amount owed *(Phase 6 — live)* |
 | **Supplier payments** | Payments on purchases + standalone debt payments to suppliers *(Phase 6 — live)* |
 | **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory valuation at cost & selling *(Phase 7 — live)* |
-| **Dashboard**       | Today's sales / profit / collected / invoice count, debt totals, period chart + top items *(Phase 8 — live)* |
+| **Dashboard**       | Today's sales / gross profit / estimated net profit / collected / invoice count, debt totals, selected-period sales and profit, period chart + top items *(Phase 8 — live)* |
+| **Operating expenses** | Separate paid expense ledger and category management; audited edits and terminal soft deletes under `/api/v1/operating-expenses`, with categories nested under `/categories`; run `npm run seed:expenses` for starter categories |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
 
 ---
@@ -116,7 +117,7 @@ is authoritative.
 - Price/cost changes append `ItemPriceHistory` (never silent overwrite).
 - Manual stock corrections update `Item.stockQuantity` and write
   `stock_adjusted` on `AuditLog` with the quantity and the reason.
-- Dimensions (`thickness` × `width` × `length`, cm) are required on sales
+- Dimensions (`thickness` × `width` × `length`, m) are required on sales
   lines only when the item `pricingMode` is `per_cubic_meter`.
 
 ### Audit log
@@ -178,14 +179,9 @@ See [`.env.example`](../.env.example) for the template.
 
 ### Seed scripts (development)
 
-```bash
-npm run seed:super-admin   # first super_admin (requires SUPER_ADMIN_* in .env)
-npm run seed:catalog       # categories and sample items
-npm run seed:parties       # sample customers and suppliers (some with opening balances)
-npm run seed:invoices      # sample cash + customer sales invoices (requires catalog + parties + user)
-```
+Available commands: `seed:catalog`, `seed:parties`, `seed:invoices`, `seed:purchases`, `seed:inventory`, and `seed:expenses`. Catalog/party/transaction scripts contain mock data; check the target database before running them. Invoice, purchase and inventory seeds require an existing user. `seed:expenses` inserts missing starter categories and preserves renamed/inactive categories.
 
-All seed scripts are idempotent — safe to re-run; existing records are skipped.
+There is no `seed:super-admin` script in this checkout. Initial account provisioning must be arranged separately; no public registration exists. Do not assume every seed is non-mutating when repeated.
 
 ### Run
 
@@ -203,54 +199,16 @@ API default: `http://localhost:3000` under `/api/v1`.
 If the frontend also wants port `3000`, run Next on another port (e.g.
 `3001`) — see [Al-Mohamadia-Frontend OVERVIEW](../../Al-Mohamadia-Frontend/docs/OVERVIEW.md).
 
-### Preview deploy
+### Runtime and deployment
 
-Personal Vercel Hobby preview, plus a portable Compose stack. No
-`*.vercel.app` host is hardcoded; both apps read hosts from the environment.
-`npm run start:dev` and Docker Compose both read `Al-Mohamadia-Backend/.env`.
-On Vercel, set `MONGO_URI` to the Atlas URI ending in `/prod`.
+The checkout includes Dockerfiles and Compose. It does not currently include a backend `vercel.json`; do not rely on historical Vercel memory/runtime settings. Select and validate deployment settings separately for the intended host.
 
-Import each GitHub repo as its own Vercel project. Set
-`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` in the backend project's dashboard (it is
-not committed). `vercel.json` runs the Nest entry `src/main.ts` at 2048 MB
-with a 300 second limit.
-
-Backend environment:
-
-| Variable | Value |
-| --- | --- |
-| `CORS_ORIGIN` | Frontend origin. Comma-separate more than one. |
-| `PUBLIC_API_BASE_URL` | Backend origin, without `/api/v1` |
-| `MONGO_URI` | Atlas URI ending in `/prod` |
-| `JWT_ACCESS_SECRET` | Access token signing secret |
-| `JWT_REFRESH_SECRET` | Refresh token signing secret |
-| `VERCEL_SUPPORT_LARGE_FUNCTIONS` | `1` |
-
-Frontend environment:
-
-| Variable | Value |
-| --- | --- |
-| `NEXT_PUBLIC_API_URL` | Backend origin including `/api/v1` |
-
-`NEXT_PUBLIC_API_URL` is baked in at build time. After changing it, redeploy
-the frontend.
-
-Seed the empty `prod` database once. Point `MONGO_URI` at that URI (do not
-reuse the dev `.env`, which points at `test`), then run:
-
-```bash
-npm run seed:super-admin
-npm run seed:catalog
-npm run seed:parties
-npm run seed:invoices
-npm run seed:purchases
-npm run seed:inventory
-```
+Set `MONGO_URI` to a transaction-capable replica set/Atlas database, JWT secrets, `CORS_ORIGIN` to the frontend origin and `FRONTEND_URL` for public receipt links. Frontend `NEXT_PUBLIC_API_URL` includes `/api/v1` and is embedded at build time. Mock seeds are for intended development data, not production initialization.
 
 Compose lives in this repo and builds the sibling
 `../Al-Mohamadia-Frontend` checkout. There is no Mongo container. The API
 container reads `Al-Mohamadia-Backend/.env` (`MONGO_URI`, JWT secrets,
-`CORS_ORIGIN`, `PUBLIC_API_BASE_URL`). The frontend image reads
+`CORS_ORIGIN`, `FRONTEND_URL`). The frontend image reads
 `Al-Mohamadia-Frontend/.env` while it builds, including
 `NEXT_PUBLIC_API_URL`. Change that value, then rebuild the frontend image.
 
@@ -289,7 +247,30 @@ once those phases land.
 | Doc                                                                                | Contents                                                               |
 | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [`../README.md`](../README.md)                                                     | Public GitHub project README                                           |
-| [AGENTS.md](./AGENTS.md)                                                           | Backend agent rules (transactions, soft delete, audit, business rules) |
+| [AGENTS.md](../AGENTS.md)                                                           | Backend agent rules (transactions, soft delete, audit, business rules) |
 | [DATABASE.md](./DATABASE.md)                                                       | Full Mongo schema and relationships                                    |
 | [PHASES.md](./PHASES.md)                                                           | Phased vertical-slice build plan and status                            |
-| [../../Al-Mohamadia-Frontend/docs/Design-System.md](../../Al-Mohamadia-Frontend/docs/Design-System.md) | Frontend design tokens (UI only)                                       |
+| [../../Al-Mohamadia-Frontend/docs/DESIGN-SYSTEM.md](../../Al-Mohamadia-Frontend/docs/DESIGN-SYSTEM.md) | Frontend design tokens (UI only)                                       |
+
+
+## Architecture maintenance
+
+Root `AGENTS.md` contains the complete agent instructions; this repository has one instruction file.
+Named contracts live in feature `types/`, pure transformations and query builders
+in `utils/`, and application/React orchestration remains in services/hooks.
+Shared ownership is established by real cross-feature callers, not anticipated reuse.
+
+Run `npm run check:architecture` and `npm run test:architecture` for placement
+checks and their regression tests. The check also runs automatically before
+`npm run build`. It uses the existing TypeScript AST parser and does not add a
+dependency or change runtime behavior. Diagnostics identify file, line, rule,
+and destination. These focused checks complement code review; they do not prove
+all business logic or ownership decisions correct.
+
+## Implemented expense and export contracts
+
+Operating expenses are paid ledger records, not obligations. Expense CRUD/category endpoints are under `/api/v1/operating-expenses`; mutations and audits share Mongo transactions. Summaries cover all active matching records. Dashboard estimated net profit subtracts paid expenses by expenseDate.
+
+Authenticated receipt and same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
+
+Recurring expenses are planned only. See [Recurring expense design](./RECURRING-EXPENSES.md) for agreed behavior and proposed collections; no recurrence schema, index, endpoint or scheduler has been installed.

@@ -3,7 +3,7 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PaymentMethod } from '../../shared/enums/payment-method.enum';
-import { cairoPeriodRange } from '../../shared/utils/period/cairo-period.util';
+import { cairoCustomRange, cairoPeriodRange } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { AuditService } from '../audit/audit.service';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
@@ -292,7 +292,15 @@ export class PaymentsService {
       filter.reversedAt = { $ne: null };
     }
 
-    if (query.period && query.date) {
+    if (query.from || query.to) {
+      if (query.period || query.date) throw new BadRequestException('Choose a period or a custom range');
+      try {
+        const { from, to } = cairoCustomRange(query.from, query.to);
+        filter.createdAt = { $gte: from, $lt: to };
+      } catch {
+        throw new BadRequestException('Invalid custom date range');
+      }
+    } else if (query.period && query.date) {
       try {
         const { from, to } = cairoPeriodRange(query.period, query.date);
         filter.createdAt = { $gte: from, $lt: to };

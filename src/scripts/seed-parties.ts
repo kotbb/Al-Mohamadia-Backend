@@ -4,24 +4,26 @@ import { Model } from 'mongoose';
 import { AppModule } from '../app.module';
 import { Customer, CustomerDocument } from '../modules/customers/schemas/customer.schema';
 import { Supplier, SupplierDocument } from '../modules/suppliers/schemas/supplier.schema';
-import { normalizePhone } from '../shared/utils/normalize-phone/normalize-phone.util';
+import { normalizeOptionalPhone } from '../shared/utils/normalize-phone/normalize-phone.util';
 import { roundMoney } from '../shared/utils/round-money/round-money.util';
 
 interface CustomerSeed {
   name: string;
-  phone: string;
+  phone?: string | null;
   address?: string;
   balance?: number;
 }
 
 interface SupplierSeed {
   name: string;
-  phone?: string;
+  phone?: string | null;
   address?: string;
   amountOwed?: number;
 }
 
 const CUSTOMER_SEEDS: CustomerSeed[] = [
+  { name: 'عميل بدون هاتف', phone: null, balance: 0 },
+  { name: 'عميل نقدي بدون هاتف', balance: 0 },
   { name: 'أحمد محمد', phone: '01012345678', address: 'القاهرة، مدينة نصر', balance: 1500 },
   { name: 'محمود علي', phone: '01098765432', balance: 0 },
   { name: 'سارة حسن', phone: '01123456789', address: 'الجيزة، الدقي', balance: 320.5 },
@@ -39,8 +41,10 @@ const SUPPLIER_SEEDS: SupplierSeed[] = [
 ];
 
 async function findOrCreateCustomer(customerModel: Model<CustomerDocument>, seed: CustomerSeed): Promise<void> {
-  const phone = normalizePhone(seed.phone);
-  const existing = await customerModel.findOne({ phone, isDeleted: false }).exec();
+  const phone = normalizeOptionalPhone(seed.phone);
+  const existing = await customerModel
+    .findOne({ ...(phone ? { phone } : { name: seed.name }), isDeleted: false })
+    .exec();
   if (existing) {
     console.log(`Customer already exists: ${seed.name} (${phone})`);
     return;
@@ -58,7 +62,7 @@ async function findOrCreateCustomer(customerModel: Model<CustomerDocument>, seed
 }
 
 async function findOrCreateSupplier(supplierModel: Model<SupplierDocument>, seed: SupplierSeed): Promise<void> {
-  const phone = seed.phone ? normalizePhone(seed.phone) : null;
+  const phone = seed.phone ? normalizeOptionalPhone(seed.phone) : null;
   const normalizedPhone = phone && phone.length > 0 ? phone : null;
 
   if (normalizedPhone) {
@@ -86,7 +90,7 @@ async function findOrCreateSupplier(supplierModel: Model<SupplierDocument>, seed
   console.log(`Supplier created: ${seed.name}`);
 }
 
-async function seedParties() {
+export async function seedParties() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -109,7 +113,9 @@ async function seedParties() {
   }
 }
 
-seedParties().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedParties().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

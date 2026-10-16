@@ -17,6 +17,5 @@ export class MergeCustomersDto {
 
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  phone?: string;
+  phone?: string | null;
 }

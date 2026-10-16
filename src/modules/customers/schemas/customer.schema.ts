@@ -8,8 +8,8 @@ export class Customer {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ required: true, trim: true })
-  phone: string;
+  @Prop({ type: String, required: false, trim: true, default: null })
+  phone: string | null;
 
   @Prop({ type: String, required: false, trim: true, default: null })
   address: string | null;
@@ -26,6 +26,9 @@ export class Customer {
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
 
-CustomerSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { isDeleted: false } });
+CustomerSchema.index(
+  { phone: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false, phone: { $type: 'string' } } },
+);
 CustomerSchema.index({ balance: -1 });
 CustomerSchema.index({ name: 1, phone: 1 });

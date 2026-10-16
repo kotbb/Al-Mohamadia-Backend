@@ -1,8 +1,10 @@
+import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { PurchaseInvoiceStatus } from '../../../shared/enums/purchase-invoice-status.enum';
 
 export class PurchaseInvoiceLineResponseDto {
   itemId: string;
   quantity: number;
+  pricingModeSnapshot: PricingMode;
   width: number | null;
   length: number | null;
   thickness: number | null;

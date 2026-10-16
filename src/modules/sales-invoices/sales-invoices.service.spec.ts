@@ -235,6 +235,40 @@ describe('SalesInvoicesService', () => {
       expect(result.remaining).toBe(0);
     });
 
+    it('stores descriptive piece dimensions and server pricing mode without changing totals or stock', async () => {
+      await service.create(
+        {
+          type: SalesInvoiceType.CASH_SALE,
+          lines: [{ itemId, quantity: 2, piecePrice: 450, thickness: 0.018, width: 1.22, length: 2.44 }],
+          paid: 900,
+        },
+        actor,
+      );
+      expect(salesInvoiceModel.create.mock.calls[0][0][0].lines[0]).toEqual(
+        expect.objectContaining({
+          thickness: 0.018,
+          width: 1.22,
+          length: 2.44,
+          lineTotal: 900,
+          pricingModeSnapshot: PricingMode.PER_PIECE,
+        }),
+      );
+      expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: itemId }, { $inc: { stockQuantity: -2 } }, { session });
+    });
+
+    it('rejects nonpositive optional piece dimensions', async () => {
+      await expect(
+        service.create(
+          {
+            type: SalesInvoiceType.CASH_SALE,
+            lines: [{ itemId, quantity: 2, piecePrice: 450, thickness: 0 }],
+            paid: 900,
+          },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('rejects cash underpayment', async () => {
       await expect(
         service.create(
@@ -308,9 +342,9 @@ describe('SalesInvoicesService', () => {
               itemId: cubicItemId,
               quantity: 2,
               piecePrice: 850,
-              thickness: 2,
-              width: 50,
-              length: 100,
+              thickness: 0.02,
+              width: 0.5,
+              length: 1,
             },
           ],
           paid: 17,
@@ -417,6 +451,26 @@ describe('SalesInvoicesService', () => {
       expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'invoice_cancelled' }), session);
     });
 
+    it('uses saved piece pricing for reversal after item pricing mode changes', async () => {
+      const invoice = makeInvoice();
+      Object.assign(invoice.lines[0], {
+        thickness: 0.018,
+        width: 1.22,
+        length: 2.44,
+        pricingModeSnapshot: PricingMode.PER_PIECE,
+      });
+      salesInvoiceModel.findById.mockReturnValue({ exec: () => Promise.resolve(invoice) });
+      itemModel.find.mockReturnValue({
+        session: () => ({ exec: () => Promise.resolve([makeItem({ pricingMode: PricingMode.PER_CUBIC_METER })]) }),
+      });
+      await service.cancel(invoiceId, actor);
+      expect(itemModel.updateOne).toHaveBeenCalledWith(
+        { _id: expect.anything() },
+        { $inc: { stockQuantity: 2 } },
+        { session },
+      );
+    });
+
     it('rejects double cancel', async () => {
       salesInvoiceModel.findById.mockReturnValue({
         exec: () => Promise.resolve(makeInvoice({ status: SalesInvoiceStatus.CANCELLED })),
@@ -499,7 +553,11 @@ describe('SalesInvoicesService', () => {
       );
 
       // Reverts old stock (+2) and applies new stock (-3)
-      expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: { toString: expect.any(Function) } }, { $inc: { stockQuantity: 2 } }, { session });
+      expect(itemModel.updateOne).toHaveBeenCalledWith(
+        { _id: { toString: expect.any(Function) } },
+        { $inc: { stockQuantity: 2 } },
+        { session },
+      );
       expect(itemModel.updateOne).toHaveBeenCalledWith({ _id: itemId }, { $inc: { stockQuantity: -3 } }, { session });
 
       // Updates in-place payment
@@ -569,6 +627,56 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('share and pdf', () => {
+    it('returns an authenticated receipt with the current customer name', async () => {
+      const result = await service.getReceipt(invoiceId);
+      expect(result.customerName).toBe('أحمد');
+      expect(result.lines[0].itemLabel).toBe('لوح MDF');
+      expect(result.invoiceNumber).toBe('INV-0001');
+    });
+
+    it('returns a cash receipt without a named customer', async () => {
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(makeInvoice({ type: SalesInvoiceType.CASH_SALE, customerId: null })),
+      });
+      const result = await service.getReceipt(invoiceId);
+      expect(result.customerName).toBeNull();
+      expect(customerModel.findById).not.toHaveBeenCalled();
+    });
+
+    it('returns neighboring invoices for the same customer including cancelled records', async () => {
+      const previousId = '507f1f77bcf86cd799439005';
+      const nextId = '507f1f77bcf86cd799439006';
+      const results = [{ _id: { toString: () => previousId } }, { _id: { toString: () => nextId } }];
+      salesInvoiceModel.findOne.mockImplementation((filter: Record<string, unknown>) => ({
+        sort: () => ({ select: () => ({ lean: () => ({ exec: () => Promise.resolve(results.shift()) }) }) }),
+      }));
+      const result = await service.getNeighbors(invoiceId);
+      expect(result).toEqual({ previousId, nextId });
+      expect(salesInvoiceModel.findOne).toHaveBeenCalledTimes(2);
+      expect(salesInvoiceModel.findOne.mock.calls[0][0]).not.toHaveProperty('status');
+    });
+
+    it('hides navigation for cash sales', async () => {
+      salesInvoiceModel.findById.mockReturnValue({
+        exec: () => Promise.resolve(makeInvoice({ type: SalesInvoiceType.CASH_SALE, customerId: null })),
+      });
+      expect(await service.getNeighbors(invoiceId)).toEqual({ previousId: null, nextId: null });
+      expect(salesInvoiceModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('returns null at a history boundary and uses ID to break timestamp ties', async () => {
+      const nextId = '507f1f77bcf86cd799439006';
+      const results = [null, { _id: { toString: () => nextId } }];
+      salesInvoiceModel.findOne.mockImplementation(() => ({
+        sort: () => ({ select: () => ({ lean: () => ({ exec: () => Promise.resolve(results.shift()) }) }) }),
+      }));
+      expect(await service.getNeighbors(invoiceId)).toEqual({ previousId: null, nextId });
+      const previousFilter = salesInvoiceModel.findOne.mock.calls[0][0] as { $or: Record<string, unknown>[] };
+      const nextFilter = salesInvoiceModel.findOne.mock.calls[1][0] as { $or: Record<string, unknown>[] };
+      expect(previousFilter.$or[1]).toHaveProperty('_id.$lt');
+      expect(nextFilter.$or[1]).toHaveProperty('_id.$gt');
+    });
+
     it('mints pdfShareToken and returns WhatsApp payload', async () => {
       const invoice = makeInvoice({ pdfShareToken: null });
       salesInvoiceModel.findById.mockReturnValue({

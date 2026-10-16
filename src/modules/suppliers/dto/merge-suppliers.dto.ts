@@ -17,5 +17,5 @@ export class MergeSuppliersDto {
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  phone?: string | null;
 }

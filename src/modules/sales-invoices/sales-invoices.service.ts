@@ -9,9 +9,10 @@ import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
+import { resolveLinePricingMode } from '../../shared/utils/volume/line-pricing-mode.util';
 import { SalesInvoiceStatus } from '../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../shared/enums/sales-invoice-type.enum';
-import { cairoPeriodRange, cairoYearNow } from '../../shared/utils/period/cairo-period.util';
+import { cairoCustomRange, cairoPeriodRange, cairoYearNow } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../../shared/utils/volume/cubic-meter.util';
 import { SHOP_NAME } from './constants/shop.constant';
@@ -257,11 +258,11 @@ export class SalesInvoicesService {
         }
 
         const stockDelta = stockDeltaForLine({
-          pricingMode: item.pricingMode,
+          pricingMode: resolveLinePricingMode(line),
           quantity: line.quantity,
-          thicknessCm: line.thickness,
-          widthCm: line.width,
-          lengthCm: line.length,
+          thicknessM: line.thickness,
+          widthM: line.width,
+          lengthM: line.length,
         });
 
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
@@ -397,11 +398,11 @@ export class SalesInvoicesService {
         }
 
         const stockDelta = stockDeltaForLine({
-          pricingMode: item.pricingMode,
+          pricingMode: resolveLinePricingMode(line),
           quantity: line.quantity,
-          thicknessCm: line.thickness,
-          widthCm: line.width,
-          lengthCm: line.length,
+          thicknessM: line.thickness,
+          widthM: line.width,
+          lengthM: line.length,
         });
 
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
@@ -548,6 +549,68 @@ export class SalesInvoicesService {
       throw new NotFoundException('Sales invoice not found');
     }
 
+    return this.toReceiptDto(invoice);
+  }
+
+  // Get a receipt payload by invoice ID
+  public async getReceipt(id: string): Promise<PublicInvoiceResponseDto> {
+    return this.toReceiptDto(await this.requireInvoiceById(id));
+  }
+
+  // Get the previous and next invoice IDs for a given invoice
+  public async getNeighbors(id: string): Promise<{ previousId: string | null; nextId: string | null }> {
+    const invoice = await this.requireInvoiceById(id);
+    if (!invoice.customerId || invoice.type !== SalesInvoiceType.CUSTOMER_SALE) {
+      return { previousId: null, nextId: null };
+    }
+
+    const createdAt = invoice.get('createdAt') as Date;
+    const base = { customerId: invoice.customerId, type: SalesInvoiceType.CUSTOMER_SALE };
+    const [previous, next] = await Promise.all([
+      this.salesInvoiceModel
+        .findOne({ ...base, $or: [{ createdAt: { $lt: createdAt } }, { createdAt, _id: { $lt: invoice._id } }] })
+        .sort({ createdAt: -1, _id: -1 })
+        .select('_id')
+        .lean()
+        .exec(),
+      this.salesInvoiceModel
+        .findOne({ ...base, $or: [{ createdAt: { $gt: createdAt } }, { createdAt, _id: { $gt: invoice._id } }] })
+        .sort({ createdAt: 1, _id: 1 })
+        .select('_id')
+        .lean()
+        .exec(),
+    ]);
+    return {
+      previousId: previous?._id.toString() ?? null,
+      nextId: next?._id.toString() ?? null,
+    };
+  }
+
+  // Get a share payload by invoice ID
+  public async getSharePayload(id: string): Promise<SalesInvoiceShareResponseDto> {
+    const invoice = await this.requireInvoiceById(id);
+
+    if (!invoice.pdfShareToken) {
+      invoice.pdfShareToken = randomBytes(32).toString('hex');
+      await invoice.save();
+    }
+
+    const frontendUrl = this.configService
+      .get<string>(
+        'FRONTEND_URL',
+        this.configService.get<string>('CORS_ORIGIN', 'http://localhost:3001') ?? 'http://localhost:3001',
+      )
+      .replace(/\/$/, '');
+    const receiptUrl = `${frontendUrl}/ar/invoices/public/${invoice.pdfShareToken}`;
+    const message = `فاتورة ${SHOP_NAME} رقم ${invoice.invoiceNumber}\n${receiptUrl}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    return { pdfUrl: receiptUrl, whatsappUrl, message };
+  }
+
+  // ----------------- Helper Methods -----------------
+
+  private async toReceiptDto(invoice: SalesInvoiceDocument): Promise<PublicInvoiceResponseDto> {
     const itemIds = invoice.lines.map((line) => line.itemId);
     const items = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
     const itemById = new Map(items.map((item) => [item._id.toString(), item]));
@@ -586,30 +649,6 @@ export class SalesInvoicesService {
     };
   }
 
-  // Get a share payload by invoice ID
-  public async getSharePayload(id: string): Promise<SalesInvoiceShareResponseDto> {
-    const invoice = await this.requireInvoiceById(id);
-
-    if (!invoice.pdfShareToken) {
-      invoice.pdfShareToken = randomBytes(32).toString('hex');
-      await invoice.save();
-    }
-
-    const frontendUrl = this.configService
-      .get<string>(
-        'FRONTEND_URL',
-        this.configService.get<string>('CORS_ORIGIN', 'http://localhost:3001') ?? 'http://localhost:3001',
-      )
-      .replace(/\/$/, '');
-    const receiptUrl = `${frontendUrl}/ar/invoices/public/${invoice.pdfShareToken}`;
-    const message = `فاتورة ${SHOP_NAME} رقم ${invoice.invoiceNumber}\n${receiptUrl}`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-    return { pdfUrl: receiptUrl, whatsappUrl, message };
-  }
-
-  // ----------------- Helper Methods -----------------
-
   private async requireInvoiceById(id: string): Promise<SalesInvoiceDocument> {
     const invoice = await this.salesInvoiceModel.findById(id).exec();
     if (!invoice) {
@@ -636,9 +675,14 @@ export class SalesInvoicesService {
       }
     }
 
-    const thickness = isCubic ? lineDto.thickness! : null;
-    const width = isCubic ? lineDto.width! : null;
-    const length = isCubic ? lineDto.length! : null;
+    const thickness = lineDto.thickness ?? null;
+    const width = lineDto.width ?? null;
+    const length = lineDto.length ?? null;
+    for (const dimension of [thickness, width, length]) {
+      if (dimension != null && (!Number.isFinite(dimension) || dimension <= 0)) {
+        throw new BadRequestException('Dimensions must be positive finite meter values');
+      }
+    }
 
     const piecePrice = roundMoney(lineDto.piecePrice);
     const costPriceSnapshot = roundMoney(item.cost);
@@ -647,18 +691,18 @@ export class SalesInvoicesService {
         pricingMode: item.pricingMode,
         quantity: lineDto.quantity,
         piecePrice,
-        thicknessCm: thickness,
-        widthCm: width,
-        lengthCm: length,
+        thicknessM: thickness,
+        widthM: width,
+        lengthM: length,
       }),
     );
 
     const stockDelta = stockDeltaForLine({
       pricingMode: item.pricingMode,
       quantity: lineDto.quantity,
-      thicknessCm: thickness,
-      widthCm: width,
-      lengthCm: length,
+      thicknessM: thickness,
+      widthM: width,
+      lengthM: length,
     });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
@@ -670,6 +714,7 @@ export class SalesInvoicesService {
         itemId: item._id,
         quantity: lineDto.quantity,
         width,
+        pricingModeSnapshot: item.pricingMode,
         length,
         thickness,
         piecePrice,
@@ -702,7 +747,15 @@ export class SalesInvoicesService {
       filter.status = query.status;
     }
 
-    if (query.period && query.date) {
+    if (query.from || query.to) {
+      if (query.period || query.date) throw new BadRequestException('Choose a period or a custom range');
+      try {
+        const { from, to } = cairoCustomRange(query.from, query.to);
+        filter.createdAt = { $gte: from, $lt: to };
+      } catch {
+        throw new BadRequestException('Invalid custom date range');
+      }
+    } else if (query.period && query.date) {
       try {
         const { from, to } = cairoPeriodRange(query.period, query.date);
         filter.createdAt = { $gte: from, $lt: to };
@@ -742,6 +795,7 @@ export class SalesInvoicesService {
         itemId: line.itemId.toString(),
         quantity: line.quantity,
         width: line.width ?? null,
+        pricingModeSnapshot: resolveLinePricingMode(line),
         length: line.length ?? null,
         thickness: line.thickness ?? null,
         piecePrice: line.piecePrice,

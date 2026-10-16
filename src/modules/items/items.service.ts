@@ -1,3 +1,4 @@
+import { categoryRefId, categoryRefName } from './utils/category-reference.util';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
@@ -13,6 +14,9 @@ import { CategoriesService } from '../categories/categories.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { checkMongoId } from '../../shared/utils/check-mongo-id/check-mongo-id.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
+import { normalizeDimensionDefaults } from './utils/dimension-defaults.util';
+import { AddDimensionDefaultDto } from './dto/add-dimension-default.dto';
+import { ItemDimensionDefaultsResponseDto } from './dto/item-dimension-defaults-response.dto';
 
 @Injectable()
 export class ItemsService {
@@ -49,6 +53,7 @@ export class ItemsService {
             categoryId: dto.categoryId,
             isWood: dto.isWood ?? false,
             pricingMode: dto.pricingMode,
+            dimensionDefaults: normalizeDimensionDefaults(dto.dimensionDefaults),
             unitPrice: roundMoney(dto.unitPrice ?? 0),
             cost: roundMoney(dto.cost ?? 0),
             stockQuantity: dto.stockQuantity ?? 0,
@@ -70,6 +75,7 @@ export class ItemsService {
             name: { old: null, new: created.name },
             categoryId: { old: null, new: category.name },
             pricingMode: { old: null, new: created.pricingMode },
+            dimensionDefaults: { old: null, new: normalizeDimensionDefaults(created.dimensionDefaults) },
             unitPrice: { old: null, new: created.unitPrice },
             cost: { old: null, new: created.cost },
             stockQuantity: { old: null, new: created.stockQuantity },
@@ -182,6 +188,15 @@ export class ItemsService {
     if (dto.pricingMode !== undefined && dto.pricingMode !== item.pricingMode) {
       changes.pricingMode = { old: item.pricingMode, new: dto.pricingMode };
       item.pricingMode = dto.pricingMode;
+    }
+
+    if (dto.dimensionDefaults !== undefined) {
+      const oldDefaults = normalizeDimensionDefaults(item.dimensionDefaults);
+      const nextDefaults = normalizeDimensionDefaults(dto.dimensionDefaults);
+      if (JSON.stringify(oldDefaults) !== JSON.stringify(nextDefaults)) {
+        changes.dimensionDefaults = { old: oldDefaults, new: nextDefaults };
+        item.dimensionDefaults = nextDefaults;
+      }
     }
 
     if (dto.reorderThreshold !== undefined && dto.reorderThreshold !== item.reorderThreshold) {
@@ -406,6 +421,43 @@ export class ItemsService {
     }));
   }
 
+  // Add Dimension Default to item
+  public async addDimensionDefault(
+    id: string,
+    dto: AddDimensionDefaultDto,
+    user: AuthUser,
+  ): Promise<ItemDimensionDefaultsResponseDto> {
+    checkMongoId(id, 'itemId');
+
+    return this.connection.transaction(async (session) => {
+      const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).session(session).exec();
+      if (!item) throw new NotFoundException('Item not found');
+      const oldDefaults = normalizeDimensionDefaults(item.dimensionDefaults);
+      const nextDefaults = normalizeDimensionDefaults({
+        ...oldDefaults,
+        [dto.dimension]: [...oldDefaults[dto.dimension], dto.value],
+      });
+      if (JSON.stringify(oldDefaults) !== JSON.stringify(nextDefaults)) {
+        item.dimensionDefaults = nextDefaults;
+        await item.save({ session });
+        await this.auditService.log(
+          {
+            userId: user.id,
+            action: 'item_edited',
+            entityType: 'Item',
+            entityId: item._id.toString(),
+            changes: { dimensionDefaults: { old: oldDefaults, new: nextDefaults } },
+            refCollection: null,
+            refId: null,
+            summary: `Item dimension defaults updated: ${item.name}`,
+          },
+          session,
+        );
+      }
+      return { itemId: item._id.toString(), dimensionDefaults: nextDefaults };
+    });
+  }
+
   // ----------------- Helper Methods -----------------
   private toResponseDto(item: ItemDocument): ItemResponseDto {
     const category = item.categoryId as unknown as {
@@ -426,6 +478,7 @@ export class ItemsService {
       },
       isWood: item.isWood,
       pricingMode: item.pricingMode,
+      dimensionDefaults: normalizeDimensionDefaults(item.dimensionDefaults),
       unitPrice: item.unitPrice,
       cost: item.cost,
       stockQuantity: item.stockQuantity,
@@ -436,19 +489,4 @@ export class ItemsService {
       updatedAt: item.get('updatedAt') as Date | undefined,
     };
   }
-}
-
-function categoryRefId(value: unknown): string {
-  if (value && typeof value === 'object' && '_id' in value) {
-    const id = (value as { _id: { toString(): string } })._id;
-    return id.toString();
-  }
-  return String(value);
-}
-
-function categoryRefName(value: unknown): string | null {
-  if (value && typeof value === 'object' && 'name' in value && typeof (value as { name: unknown }).name === 'string') {
-    return (value as { name: string }).name;
-  }
-  return null;
 }

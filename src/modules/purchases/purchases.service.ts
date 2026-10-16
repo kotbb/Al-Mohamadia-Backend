@@ -4,8 +4,9 @@ import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PaymentMethod } from '../../shared/enums/payment-method.enum';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
+import { resolveLinePricingMode } from '../../shared/utils/volume/line-pricing-mode.util';
 import { PurchaseInvoiceStatus } from '../../shared/enums/purchase-invoice-status.enum';
-import { cairoPeriodRange, cairoYearNow } from '../../shared/utils/period/cairo-period.util';
+import { cairoCustomRange, cairoPeriodRange, cairoYearNow } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../../shared/utils/volume/cubic-meter.util';
 import { AuditService } from '../audit/audit.service';
@@ -67,12 +68,16 @@ export class PurchasesService {
     const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
     const paid = roundMoney(dto.paid ?? 0);
+    const existingDebtPayment = roundMoney(dto.existingDebtPayment ?? 0);
 
     if (paid < 0) {
       throw new BadRequestException('Paid amount cannot be negative');
     }
     if (paid > total) {
       throw new BadRequestException('Paid amount cannot exceed total');
+    }
+    if (existingDebtPayment < 0) {
+      throw new BadRequestException('Existing debt payment cannot be negative');
     }
 
     const remaining = roundMoney(total - paid);
@@ -91,6 +96,9 @@ export class PurchasesService {
       }
       if (!lockedSupplier.isActive) {
         throw new BadRequestException('Supplier is inactive');
+      }
+      if (existingDebtPayment > lockedSupplier.amountOwed) {
+        throw new BadRequestException('Payment cannot exceed total due to supplier');
       }
 
       const invoiceNumber = await this.nextInvoiceNumber(session);
@@ -119,8 +127,8 @@ export class PurchasesService {
 
       // Debt increment: Unpaid amount (remaining) increases what the shop owes the supplier
       const oldAmountOwed = lockedSupplier.amountOwed;
-      if (remaining > 0) {
-        lockedSupplier.amountOwed = roundMoney(lockedSupplier.amountOwed + remaining);
+      if (remaining > 0 || existingDebtPayment > 0) {
+        lockedSupplier.amountOwed = roundMoney(lockedSupplier.amountOwed + remaining - existingDebtPayment);
         await lockedSupplier.save({ session });
       }
 
@@ -142,6 +150,42 @@ export class PurchasesService {
         );
       }
 
+      if (existingDebtPayment > 0) {
+        const [debtPayment] = await this.supplierPaymentModel.create(
+          [
+            {
+              supplierId: lockedSupplier._id,
+              purchaseInvoiceId: null,
+              amount: existingDebtPayment,
+              method: PaymentMethod.CASH,
+              notes: dto.notes?.trim() || null,
+              recordedBy: new Types.ObjectId(user.id),
+              reversedAt: null,
+              reversedBy: null,
+            },
+          ],
+          { session },
+        );
+        await this.auditService.log(
+          {
+            userId: user.id,
+            action: 'supplier_payment_recorded',
+            entityType: 'SupplierPayment',
+            entityId: debtPayment._id.toString(),
+            changes: {
+              supplierId: { old: null, new: lockedSupplier.name },
+              amount: { old: null, new: existingDebtPayment },
+              method: { old: null, new: debtPayment.method },
+              amountOwed: { old: roundMoney(oldAmountOwed + remaining), new: lockedSupplier.amountOwed },
+            },
+            refCollection: null,
+            refId: null,
+            summary: `Payment of ${existingDebtPayment} EGP recorded for supplier: ${lockedSupplier.name}`,
+          },
+          session,
+        );
+      }
+
       await this.auditService.log(
         {
           userId: user.id,
@@ -153,6 +197,7 @@ export class PurchasesService {
             supplierId: { old: null, new: lockedSupplier.name },
             total: { old: null, new: created.total },
             paid: { old: null, new: created.paid },
+            existingDebtPayment: { old: null, new: existingDebtPayment },
             remaining: { old: null, new: created.remaining },
             status: { old: null, new: created.status },
             amountOwed: { old: oldAmountOwed, new: lockedSupplier.amountOwed },
@@ -257,11 +302,11 @@ export class PurchasesService {
         }
 
         const stockDelta = stockDeltaForLine({
-          pricingMode: item.pricingMode,
+          pricingMode: resolveLinePricingMode(line),
           quantity: line.quantity,
-          thicknessCm: line.thickness,
-          widthCm: line.width,
-          lengthCm: line.length,
+          thicknessM: line.thickness,
+          widthM: line.width,
+          lengthM: line.length,
         });
 
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: -stockDelta } }, { session });
@@ -345,9 +390,14 @@ export class PurchasesService {
       }
     }
 
-    const thickness = isCubic ? lineDto.thickness! : null;
-    const width = isCubic ? lineDto.width! : null;
-    const length = isCubic ? lineDto.length! : null;
+    const thickness = lineDto.thickness ?? null;
+    const width = lineDto.width ?? null;
+    const length = lineDto.length ?? null;
+    for (const dimension of [thickness, width, length]) {
+      if (dimension != null && (!Number.isFinite(dimension) || dimension <= 0)) {
+        throw new BadRequestException('Dimensions must be positive finite meter values');
+      }
+    }
 
     const unitCost = roundMoney(lineDto.unitCost);
     const lineTotal = roundMoney(
@@ -355,18 +405,18 @@ export class PurchasesService {
         pricingMode: item.pricingMode,
         quantity: lineDto.quantity,
         piecePrice: unitCost,
-        thicknessCm: thickness,
-        widthCm: width,
-        lengthCm: length,
+        thicknessM: thickness,
+        widthM: width,
+        lengthM: length,
       }),
     );
 
     const stockDelta = stockDeltaForLine({
       pricingMode: item.pricingMode,
       quantity: lineDto.quantity,
-      thicknessCm: thickness,
-      widthCm: width,
-      lengthCm: length,
+      thicknessM: thickness,
+      widthM: width,
+      lengthM: length,
     });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
@@ -378,6 +428,7 @@ export class PurchasesService {
         itemId: item._id,
         quantity: lineDto.quantity,
         width,
+        pricingModeSnapshot: item.pricingMode,
         length,
         thickness,
         unitCost,
@@ -413,7 +464,15 @@ export class PurchasesService {
       filter.status = query.status;
     }
 
-    if (query.period && query.date) {
+    if (query.from || query.to) {
+      if (query.period || query.date) throw new BadRequestException('Choose a period or a custom range');
+      try {
+        const { from, to } = cairoCustomRange(query.from, query.to);
+        filter.createdAt = { $gte: from, $lt: to };
+      } catch {
+        throw new BadRequestException('Invalid custom date range');
+      }
+    } else if (query.period && query.date) {
       try {
         const { from, to } = cairoPeriodRange(query.period, query.date);
         filter.createdAt = { $gte: from, $lt: to };
@@ -452,6 +511,7 @@ export class PurchasesService {
         itemId: line.itemId.toString(),
         quantity: line.quantity,
         width: line.width ?? null,
+        pricingModeSnapshot: resolveLinePricingMode(line),
         length: line.length ?? null,
         thickness: line.thickness ?? null,
         unitCost: line.unitCost,

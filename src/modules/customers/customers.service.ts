@@ -11,7 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
+import { normalizeOptionalPhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { CustomerListFilter } from './types/customer-list-filter.type';
@@ -31,14 +31,10 @@ export class CustomersService {
 
   public async create(dto: CreateCustomerDto, user: AuthUser): Promise<CustomerResponseDto> {
     const name = dto.name.trim();
-    const phone = normalizePhone(dto.phone);
-    if (!phone) {
-      throw new BadRequestException('Phone is required');
-    }
-
-    const existing = await this.customerModel.findOne({ phone, isDeleted: false }).lean().exec();
-    if (existing) {
-      throw new ConflictException('Customer phone already exists');
+    const phone = normalizeOptionalPhone(dto.phone);
+    if (phone) {
+      const existing = await this.customerModel.findOne({ phone, isDeleted: false }).lean().exec();
+      if (existing) throw new ConflictException('Customer phone already exists');
     }
 
     const balance = roundMoney(dto.balance ?? 0);
@@ -140,17 +136,16 @@ export class CustomersService {
     }
 
     if (dto.phone !== undefined) {
-      const phone = normalizePhone(dto.phone);
-      if (!phone) {
-        throw new BadRequestException('Phone is required');
-      }
+      const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== customer.phone) {
-        const existing = await this.customerModel
-          .findOne({ phone, isDeleted: false, _id: { $ne: customer._id } })
-          .lean()
-          .exec();
-        if (existing) {
-          throw new ConflictException('Customer phone already exists');
+        if (phone) {
+          const existing = await this.customerModel
+            .findOne({ phone, isDeleted: false, _id: { $ne: customer._id } })
+            .lean()
+            .exec();
+          if (existing) {
+            throw new ConflictException('Customer phone already exists');
+          }
         }
         changes.phone = { old: customer.phone, new: phone };
         customer.phone = phone;
@@ -272,22 +267,21 @@ export class CustomersService {
     }
 
     if (dto.phone !== undefined) {
-      const phone = normalizePhone(dto.phone);
-      if (!phone) {
-        throw new BadRequestException('Phone is required');
-      }
+      const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== target.phone) {
-        const excludedIds = [target._id, ...sources.map((source) => source._id)];
-        const existing = await this.customerModel
-          .findOne({
-            phone,
-            isDeleted: false,
-            _id: { $nin: excludedIds },
-          })
-          .lean()
-          .exec();
-        if (existing) {
-          throw new ConflictException('Customer phone already exists');
+        if (phone) {
+          const excludedIds = [target._id, ...sources.map((source) => source._id)];
+          const existing = await this.customerModel
+            .findOne({
+              phone,
+              isDeleted: false,
+              _id: { $nin: excludedIds },
+            })
+            .lean()
+            .exec();
+          if (existing) {
+            throw new ConflictException('Customer phone already exists');
+          }
         }
         target.phone = phone;
       }
@@ -385,7 +379,7 @@ export class CustomersService {
     return {
       id: customer._id.toString(),
       name: customer.name,
-      phone: customer.phone,
+      phone: customer.phone ?? null,
       address: customer.address ?? null,
       balance: customer.balance,
       isActive: customer.isActive,

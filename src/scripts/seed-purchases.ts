@@ -13,7 +13,7 @@ import { PurchaseInvoiceStatus } from '../shared/enums/purchase-invoice-status.e
 import { roundMoney } from '../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../shared/utils/volume/cubic-meter.util';
 
-async function seedPurchases() {
+export async function seedPurchases() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -56,6 +56,7 @@ async function seedPurchases() {
         categoryId: new Types.ObjectId(),
         isWood: false,
         pricingMode: PricingMode.PER_PIECE,
+        dimensionDefaults: { thickness: [0.018], width: [1.22], length: [2.44] },
         unitPrice: 450,
         cost: 380,
         stockQuantity: 48,
@@ -76,6 +77,7 @@ async function seedPurchases() {
         categoryId: pieceItem.categoryId,
         isWood: true,
         pricingMode: PricingMode.PER_CUBIC_METER,
+        dimensionDefaults: { thickness: [0.02, 0.05], width: [0.1, 0.5], length: [1, 4] },
         unitPrice: 8500,
         cost: 7200,
         stockQuantity: 12.5,
@@ -104,34 +106,34 @@ async function seedPurchases() {
         quantity: pieceQuantity,
       });
 
-      // 2. Line 2: Cubic wood item (5 pieces of 5cm x 10cm x 400cm = 0.1 m³ each, total 0.5 m³ @ 8000 = 4000)
+      // 2. Line 2: Cubic wood item (5 pieces of 0.05m x 0.1m x 4m = 0.02 m³ each, total 0.1 m³ @ 8000 = 800)
       const cubicQuantity = 5;
       const cubicUnitCost = 8000;
-      const thickness = 5;
-      const width = 10;
-      const length = 400;
+      const thickness = 0.05;
+      const width = 0.1;
+      const length = 4;
 
       const cubicTotal = roundMoney(
         lineTotalForPricing({
           pricingMode: PricingMode.PER_CUBIC_METER,
           quantity: cubicQuantity,
           piecePrice: cubicUnitCost,
-          thicknessCm: thickness,
-          widthCm: width,
-          lengthCm: length,
+          thicknessM: thickness,
+          widthM: width,
+          lengthM: length,
         }),
       );
       const cubicStockDelta = stockDeltaForLine({
         pricingMode: PricingMode.PER_CUBIC_METER,
         quantity: cubicQuantity,
-        thicknessCm: thickness,
-        widthCm: width,
-        lengthCm: length,
+        thicknessM: thickness,
+        widthM: width,
+        lengthM: length,
       });
 
-      const total = roundMoney(pieceTotal + cubicTotal); // 3500 + 4000 = 7500
+      const total = roundMoney(pieceTotal + cubicTotal); // 3500 + 800 = 4300
       const paid = 3000; // paid upfront
-      const remaining = roundMoney(total - paid); // 4500 remaining
+      const remaining = roundMoney(total - paid); // 1300 remaining
 
       const [created] = await purchaseInvoiceModel.create([
         {
@@ -141,9 +143,10 @@ async function seedPurchases() {
             {
               itemId: pieceItem._id,
               quantity: pieceQuantity,
-              width: null,
-              length: null,
-              thickness: null,
+              width: 1.22,
+              length: 2.44,
+              thickness: 0.018,
+              pricingModeSnapshot: PricingMode.PER_PIECE,
               unitCost: pieceLineCost,
               lineTotal: pieceTotal,
               note: 'توريد دفعة أولى ألواح MDF',
@@ -154,6 +157,7 @@ async function seedPurchases() {
               width,
               length,
               thickness,
+              pricingModeSnapshot: PricingMode.PER_CUBIC_METER,
               unitCost: cubicUnitCost,
               lineTotal: cubicTotal,
               note: 'خشب بلدي قطاع 5x10x400',
@@ -234,7 +238,9 @@ async function seedPurchases() {
   }
 }
 
-seedPurchases().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedPurchases().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

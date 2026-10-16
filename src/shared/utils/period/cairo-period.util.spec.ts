@@ -1,6 +1,7 @@
 import { SalesInvoicePeriod } from '../../enums/sales-invoice-period.enum';
 import {
   cairoInclusiveDateBounds,
+  cairoCustomRange,
   cairoPeriodBuckets,
   cairoPeriodRange,
   formatCairoDate,
@@ -8,6 +9,14 @@ import {
 } from './cairo-period.util';
 
 describe('cairo-period.util', () => {
+  it('uses inclusive Cairo custom dates and rejects incomplete or reversed ranges', () => {
+    const range = cairoCustomRange('2026-10-01', '2026-10-31');
+    expect(formatCairoDate(range.from)).toBe('2026-10-01');
+    expect(formatCairoDate(range.to)).toBe('2026-11-01');
+    expect(() => cairoCustomRange('2026-10-31', '2026-10-01')).toThrow();
+    expect(() => cairoCustomRange('2026-10-01')).toThrow();
+    expect(() => cairoCustomRange('2026-02-31', '2026-03-01')).toThrow();
+  });
   it('parses ISO date parts', () => {
     expect(parseIsoDateParts('2026-03-15')).toEqual({
       year: 2026,

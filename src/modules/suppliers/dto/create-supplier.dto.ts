@@ -7,7 +7,7 @@ export class CreateSupplierDto {
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  phone?: string | null;
 
   @IsOptional()
   @IsString()

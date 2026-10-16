@@ -1,9 +1,9 @@
 /**
- * Converts thickness × width × length in cm to cubic meters.
+ * Multiplies thickness × width × length in meters to cubic meters.
  * Rounded to 6 decimal places for stock quantities.
  */
-export function cmToCubicMeters(thicknessCm: number, widthCm: number, lengthCm: number): number {
-  const volume = (thicknessCm * widthCm * lengthCm) / 1_000_000;
+export function metersToCubicMeters(thicknessM: number, widthM: number, lengthM: number): number {
+  const volume = thicknessM * widthM * lengthM;
   return Math.round(volume * 1_000_000) / 1_000_000;
 }
 
@@ -14,18 +14,18 @@ export function cmToCubicMeters(thicknessCm: number, widthCm: number, lengthCm: 
 export function stockDeltaForLine(params: {
   pricingMode: 'per_piece' | 'per_cubic_meter';
   quantity: number;
-  thicknessCm?: number | null;
-  widthCm?: number | null;
-  lengthCm?: number | null;
+  thicknessM?: number | null;
+  widthM?: number | null;
+  lengthM?: number | null;
 }): number {
   if (params.pricingMode === 'per_piece') {
     return params.quantity;
   }
 
-  const thickness = params.thicknessCm ?? 0;
-  const width = params.widthCm ?? 0;
-  const length = params.lengthCm ?? 0;
-  const volume = cmToCubicMeters(thickness, width, length);
+  const thickness = params.thicknessM ?? 0;
+  const width = params.widthM ?? 0;
+  const length = params.lengthM ?? 0;
+  const volume = metersToCubicMeters(thickness, width, length);
   return Math.round(params.quantity * volume * 1_000_000) / 1_000_000;
 }
 
@@ -37,17 +37,17 @@ export function lineTotalForPricing(params: {
   pricingMode: 'per_piece' | 'per_cubic_meter';
   quantity: number;
   piecePrice: number;
-  thicknessCm?: number | null;
-  widthCm?: number | null;
-  lengthCm?: number | null;
+  thicknessM?: number | null;
+  widthM?: number | null;
+  lengthM?: number | null;
 }): number {
   if (params.pricingMode === 'per_piece') {
     return params.quantity * params.piecePrice;
   }
 
-  const thickness = params.thicknessCm ?? 0;
-  const width = params.widthCm ?? 0;
-  const length = params.lengthCm ?? 0;
-  const volume = cmToCubicMeters(thickness, width, length);
+  const thickness = params.thicknessM ?? 0;
+  const width = params.widthM ?? 0;
+  const length = params.lengthM ?? 0;
+  const volume = metersToCubicMeters(thickness, width, length);
   return params.quantity * volume * params.piecePrice;
 }

@@ -1,61 +1,38 @@
+import type {
+  TodaySalesAgg,
+  TopItemAgg,
+  SalesHeaderAgg,
+  SalesCogsAgg,
+  CollectedAgg,
+  DebtAgg,
+} from './types/dashboard-aggregation.types';
+import {
+  buildSalesHeaderPipeline,
+  buildSalesCogsPipeline,
+  buildCollectedPipeline,
+  buildDebtPipeline,
+  buildTopSellingItemsPipeline,
+} from './utils/dashboard-aggregation.util';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SalesInvoicePeriod } from '../../shared/enums/sales-invoice-period.enum';
 import { SalesInvoiceStatus } from '../../shared/enums/sales-invoice-status.enum';
 import {
+  cairoCustomRange,
   cairoPeriodBuckets,
   cairoPeriodRange,
   formatCairoDate,
 } from '../../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
-import { cmToCubicMeters } from '../../shared/utils/volume/cubic-meter.util';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
+import { OperatingExpense, OperatingExpenseDocument } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
 import { GetDashboardQueryDto } from './dto/get-dashboard-query.dto';
-
-type TodaySalesAgg = {
-  totalSum: number;
-  discountSum: number;
-  invoiceCount: number;
-  cogsSum: number;
-};
-
-type TopItemAgg = {
-  _id: string;
-  revenue: number;
-  quantity: number;
-};
-
-/** Matches cmToCubicMeters: round volume to 6 decimal places. */
-function mongoLineVolumeM3Expr(): Record<string, unknown> {
-  return {
-    $round: [
-      {
-        $divide: [
-          {
-            $multiply: ['$lines.thickness', '$lines.width', '$lines.length'],
-          },
-          1_000_000,
-        ],
-      },
-      6,
-    ],
-  };
-}
-
-function mongoLineHasDimensionsExpr(): Record<string, unknown> {
-  return {
-    $and: [
-      { $ne: ['$lines.width', null] },
-      { $ne: ['$lines.length', null] },
-      { $ne: ['$lines.thickness', null] },
-    ],
-  };
-}
+import { dashboardCustomBuckets } from './utils/dashboard-custom-buckets.util';
 
 @Injectable()
 export class DashboardService {
@@ -64,6 +41,8 @@ export class DashboardService {
     private readonly salesInvoiceModel: Model<SalesInvoiceDocument>,
     @InjectModel(Payment.name)
     private readonly paymentModel: Model<PaymentDocument>,
+    @InjectModel(OperatingExpense.name)
+    private readonly operatingExpenseModel: Model<OperatingExpenseDocument>,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Item.name)
@@ -72,22 +51,36 @@ export class DashboardService {
 
   public async getDashboard(query: GetDashboardQueryDto): Promise<DashboardResponseDto> {
     const { period, date } = this.resolvePeriodQuery(query);
-    const periodRange = cairoPeriodRange(period, date);
-    const buckets = cairoPeriodBuckets(period, date);
+    const periodRange = period === 'custom' ? cairoCustomRange(query.from, query.to) : cairoPeriodRange(period, date);
+    const buckets =
+      period === 'custom' ? dashboardCustomBuckets(query.from!, query.to!) : cairoPeriodBuckets(period, date);
 
     const todayIso = formatCairoDate(new Date());
     const todayRange = cairoPeriodRange(SalesInvoicePeriod.DAY, todayIso);
 
-    const [todaySalesAgg, collectedAgg, debtAgg, periodInvoices, topItemsAgg] = await Promise.all([
+    const [
+      todaySalesAgg,
+      collectedAgg,
+      debtAgg,
+      periodInvoices,
+      topItemsAgg,
+      periodSalesAgg,
+      todayExpenses,
+      periodExpenses,
+    ] = await Promise.all([
       this.aggregateTodaySales(todayRange.from, todayRange.to),
       this.aggregateCollected(todayRange.from, todayRange.to),
       this.aggregateDebt(),
       this.fetchPeriodSavedInvoices(periodRange.from, periodRange.to),
       this.aggregateTopSellingItems(periodRange.from, periodRange.to),
+      this.aggregateTodaySales(periodRange.from, periodRange.to),
+      this.aggregateExpenses(todayRange.from, todayRange.to),
+      this.aggregateExpenses(periodRange.from, periodRange.to),
     ]);
 
     const sales = roundMoney(todaySalesAgg.totalSum - todaySalesAgg.discountSum);
     const estimatedProfit = roundMoney(todaySalesAgg.totalSum - todaySalesAgg.discountSum - todaySalesAgg.cogsSum);
+    const periodGrossProfit = roundMoney(periodSalesAgg.totalSum - periodSalesAgg.discountSum - periodSalesAgg.cogsSum);
 
     const salesSeries = buckets.map((bucket) => {
       let bucketSales = 0;
@@ -133,8 +126,16 @@ export class DashboardService {
       today: {
         sales,
         estimatedProfit,
+        operatingExpenses: todayExpenses,
+        estimatedNetProfit: roundMoney(estimatedProfit - todayExpenses),
         invoiceCount: todaySalesAgg.invoiceCount,
         collected: roundMoney(collectedAgg),
+      },
+      periodFinancials: {
+        sales: roundMoney(periodSalesAgg.totalSum - periodSalesAgg.discountSum),
+        estimatedGrossProfit: periodGrossProfit,
+        operatingExpenses: periodExpenses,
+        estimatedNetProfit: roundMoney(periodGrossProfit - periodExpenses),
       },
       debt: {
         totalDebt: roundMoney(debtAgg.totalDebt),
@@ -153,11 +154,22 @@ export class DashboardService {
 
   // ------------------- Helper Functions -------------------
   private resolvePeriodQuery(query: GetDashboardQueryDto): {
-    period: SalesInvoicePeriod;
+    period: SalesInvoicePeriod | 'custom';
     date: string;
   } {
     const hasPeriod = query.period !== undefined;
     const hasDate = Boolean(query.date);
+
+    if (query.from || query.to) {
+      if (hasPeriod || hasDate) throw new BadRequestException('Choose a period or a custom range');
+      try {
+        cairoCustomRange(query.from, query.to);
+        dashboardCustomBuckets(query.from!, query.to!);
+      } catch {
+        throw new BadRequestException('Invalid custom date range');
+      }
+      return { period: 'custom', date: query.from! };
+    }
 
     if (hasPeriod && !hasDate) {
       throw new BadRequestException('date is required when period is set');
@@ -186,52 +198,9 @@ export class DashboardService {
   }
 
   private async aggregateTodaySales(from: Date, to: Date): Promise<TodaySalesAgg> {
-    const invoiceFilter = {
-      status: SalesInvoiceStatus.SAVED,
-      createdAt: { $gte: from, $lt: to },
-    };
-
     const [headerAgg, cogsAgg] = await Promise.all([
-      this.salesInvoiceModel.aggregate<{
-        totalSum: number;
-        discountSum: number;
-        invoiceCount: number;
-      }>([
-        { $match: invoiceFilter },
-        {
-          $group: {
-            _id: null,
-            totalSum: { $sum: '$total' },
-            discountSum: { $sum: '$discount' },
-            invoiceCount: { $sum: 1 },
-          },
-        },
-      ]),
-      this.salesInvoiceModel.aggregate<{ cogsSum: number }>([
-        { $match: invoiceFilter },
-        { $unwind: '$lines' },
-        {
-          $project: {
-            lineCogs: {
-              $cond: [
-                mongoLineHasDimensionsExpr(),
-                {
-                  $multiply: ['$lines.quantity', mongoLineVolumeM3Expr(), '$lines.costPriceSnapshot'],
-                },
-                {
-                  $multiply: ['$lines.quantity', '$lines.costPriceSnapshot'],
-                },
-              ],
-            },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            cogsSum: { $sum: '$lineCogs' },
-          },
-        },
-      ]),
+      this.salesInvoiceModel.aggregate<SalesHeaderAgg>(buildSalesHeaderPipeline(from, to)),
+      this.salesInvoiceModel.aggregate<SalesCogsAgg>(buildSalesCogsPipeline(from, to)),
     ]);
 
     return {
@@ -243,41 +212,20 @@ export class DashboardService {
   }
 
   private async aggregateCollected(from: Date, to: Date): Promise<number> {
-    const agg = await this.paymentModel.aggregate<{ totalAmount: number }>([
-      {
-        $match: {
-          reversedAt: null,
-          createdAt: { $gte: from, $lt: to },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalAmount: { $sum: '$amount' },
-        },
-      },
-    ]);
+    const agg = await this.paymentModel.aggregate<CollectedAgg>(buildCollectedPipeline(from, to));
     return agg[0]?.totalAmount ?? 0;
   }
 
-  private async aggregateDebt(): Promise<{ totalDebt: number; debtorCount: number }> {
-    const agg = await this.customerModel.aggregate<{
-      totalDebt: number;
-      debtorCount: number;
-    }>([
-      { $match: { isDeleted: false } },
-      {
-        $group: {
-          _id: null,
-          totalDebt: { $sum: '$balance' },
-          debtorCount: {
-            $sum: {
-              $cond: [{ $gt: ['$balance', 0] }, 1, 0],
-            },
-          },
-        },
-      },
+  private async aggregateExpenses(from: Date, to: Date): Promise<number> {
+    const rows = await this.operatingExpenseModel.aggregate<{ amount: number }>([
+      { $match: { isDeleted: false, expenseDate: { $gte: formatCairoDate(from), $lt: formatCairoDate(to) } } },
+      { $group: { _id: null, amount: { $sum: '$amount' } } },
     ]);
+    return roundMoney(rows[0]?.amount ?? 0);
+  }
+
+  private async aggregateDebt(): Promise<DebtAgg> {
+    const agg = await this.customerModel.aggregate<DebtAgg>(buildDebtPipeline());
 
     return {
       totalDebt: agg[0]?.totalDebt ?? 0,
@@ -296,54 +244,6 @@ export class DashboardService {
   }
 
   private async aggregateTopSellingItems(from: Date, to: Date): Promise<TopItemAgg[]> {
-    return this.salesInvoiceModel.aggregate<TopItemAgg>([
-      {
-        $match: {
-          status: SalesInvoiceStatus.SAVED,
-          createdAt: { $gte: from, $lt: to },
-        },
-      },
-      { $unwind: '$lines' },
-      {
-        $project: {
-          itemId: { $toString: '$lines.itemId' },
-          revenue: '$lines.lineTotal',
-          quantity: {
-            $cond: [
-              mongoLineHasDimensionsExpr(),
-              // Matches stockDeltaForLine: round(qty × volume, 6)
-              {
-                $round: [{ $multiply: ['$lines.quantity', mongoLineVolumeM3Expr()] }, 6],
-              },
-              '$lines.quantity',
-            ],
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '$itemId',
-          revenue: { $sum: '$revenue' },
-          quantity: { $sum: '$quantity' },
-        },
-      },
-      { $sort: { revenue: -1 } },
-      { $limit: 5 },
-    ]);
+    return this.salesInvoiceModel.aggregate<TopItemAgg>(buildTopSellingItemsPipeline(from, to));
   }
-}
-
-/** Exposed for unit tests that assert line COGS without Mongo. */
-export function lineCogsFromFields(params: {
-  quantity: number;
-  costPriceSnapshot: number;
-  width: number | null;
-  length: number | null;
-  thickness: number | null;
-}): number {
-  if (params.width != null && params.length != null && params.thickness != null) {
-    const volume = cmToCubicMeters(params.thickness, params.width, params.length);
-    return params.quantity * volume * params.costPriceSnapshot;
-  }
-  return params.quantity * params.costPriceSnapshot;
 }

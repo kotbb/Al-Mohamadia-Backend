@@ -23,6 +23,16 @@ export class ListPurchaseInvoicesQueryDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
+
+  @IsOptional()
+  @IsString()
   q?: string;
 
   @IsOptional()

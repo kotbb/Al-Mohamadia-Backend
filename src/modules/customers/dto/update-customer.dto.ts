@@ -8,8 +8,7 @@ export class UpdateCustomerDto {
 
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  phone?: string;
+  phone?: string | null;
 
   @IsOptional()
   @IsString()

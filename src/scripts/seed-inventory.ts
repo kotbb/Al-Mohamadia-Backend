@@ -57,7 +57,7 @@ const INVENTORY_ITEMS_SEED: TestItemSeed[] = [
   },
 ];
 
-async function seedInventory() {
+export async function seedInventory() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -89,6 +89,7 @@ async function seedInventory() {
           categoryId: category._id,
           isWood: seed.isWood,
           pricingMode: seed.pricingMode,
+          dimensionDefaults: { thickness: [], width: [], length: [] },
           unitPrice: roundMoney(seed.unitPrice),
           cost: roundMoney(seed.cost),
           stockQuantity: seed.stockQuantity,
@@ -141,7 +142,9 @@ async function seedInventory() {
   }
 }
 
-seedInventory().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedInventory().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

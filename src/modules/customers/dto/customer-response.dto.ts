@@ -1,7 +1,7 @@
 export class CustomerResponseDto {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   address: string | null;
   balance: number;
   isActive: boolean;

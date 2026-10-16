@@ -15,7 +15,7 @@ import { cairoYearNow } from '../shared/utils/period/cairo-period.util';
 import { roundMoney } from '../shared/utils/round-money/round-money.util';
 import { lineTotalForPricing, stockDeltaForLine } from '../shared/utils/volume/cubic-meter.util';
 
-async function seedInvoices() {
+export async function seedInvoices() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -73,9 +73,10 @@ async function seedInvoices() {
             {
               itemId: pieceItem._id,
               quantity: 2,
-              width: null,
-              length: null,
-              thickness: null,
+              width: 1.22,
+              length: 2.44,
+              thickness: 0.018,
+              pricingModeSnapshot: PricingMode.PER_PIECE,
               piecePrice,
               costPriceSnapshot: roundMoney(pieceItem.cost),
               lineTotal,
@@ -105,26 +106,26 @@ async function seedInvoices() {
 
     if (!existingCustomer) {
       const piecePrice = roundMoney(cubicItem.unitPrice);
-      const thickness = 2;
-      const width = 50;
-      const length = 100;
+      const thickness = 0.02;
+      const width = 0.5;
+      const length = 1;
       const quantity = 2;
       const lineTotal = roundMoney(
         lineTotalForPricing({
           pricingMode: PricingMode.PER_CUBIC_METER,
           quantity,
           piecePrice,
-          thicknessCm: thickness,
-          widthCm: width,
-          lengthCm: length,
+          thicknessM: thickness,
+          widthM: width,
+          lengthM: length,
         }),
       );
       const stockDelta = stockDeltaForLine({
         pricingMode: PricingMode.PER_CUBIC_METER,
         quantity,
-        thicknessCm: thickness,
-        widthCm: width,
-        lengthCm: length,
+        thicknessM: thickness,
+        widthM: width,
+        lengthM: length,
       });
       const paid = roundMoney(lineTotal / 2);
       const remaining = roundMoney(lineTotal - paid);
@@ -141,6 +142,7 @@ async function seedInvoices() {
               width,
               length,
               thickness,
+              pricingModeSnapshot: PricingMode.PER_CUBIC_METER,
               piecePrice,
               costPriceSnapshot: roundMoney(cubicItem.cost),
               lineTotal,
@@ -182,7 +184,9 @@ async function seedInvoices() {
   }
 }
 
-seedInvoices().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedInvoices().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

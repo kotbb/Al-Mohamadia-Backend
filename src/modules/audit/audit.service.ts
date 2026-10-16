@@ -8,7 +8,8 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { AuditActorDto, AuditLogListResponseDto, AuditLogResponseDto } from './dto/audit-log-response.dto';
 import { CreateAuditLogDto } from './dto/create-audit-log.dto';
 import { ListAuditLogsQueryDto } from './dto/list-audit-logs-query.dto';
-import { AuditEntityType, isUserAuditAction } from './audit.constants';
+import { AuditEntityType } from './audit.constants';
+import { isUserAuditAction } from './utils/is-user-audit-action.util';
 import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 
 @Injectable()

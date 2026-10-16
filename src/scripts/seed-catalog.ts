@@ -21,6 +21,7 @@ interface ItemSeed {
   cost: number;
   stockQuantity: number;
   reorderThreshold: number;
+  dimensionDefaults: { thickness: number[]; width: number[]; length: number[] };
 }
 
 const CATEGORY_SEEDS: CategorySeed[] = [{ name: 'ساده MDF' }, { name: 'خشب' }, { name: 'PVC' }];
@@ -36,6 +37,7 @@ const ITEM_SEEDS: ItemSeed[] = [
     cost: 380,
     stockQuantity: 48,
     reorderThreshold: 10,
+    dimensionDefaults: { thickness: [0.018], width: [1.22], length: [2.44] },
   },
   {
     code: 'MDF-25',
@@ -47,6 +49,7 @@ const ITEM_SEEDS: ItemSeed[] = [
     cost: 520,
     stockQuantity: 32,
     reorderThreshold: 8,
+    dimensionDefaults: { thickness: [0.025], width: [1.22, 1.525], length: [2.44, 3.05] },
   },
   {
     code: 'WOOD-BALADI',
@@ -58,6 +61,7 @@ const ITEM_SEEDS: ItemSeed[] = [
     cost: 720,
     stockQuantity: 12.5,
     reorderThreshold: 3,
+    dimensionDefaults: { thickness: [0.02, 0.05], width: [0.1, 0.5], length: [1, 4] },
   },
   {
     code: 'WOOD-MAHOG',
@@ -69,6 +73,7 @@ const ITEM_SEEDS: ItemSeed[] = [
     cost: 980,
     stockQuantity: 6.25,
     reorderThreshold: 2,
+    dimensionDefaults: { thickness: [0.05], width: [0.1], length: [4] },
   },
   {
     code: 'PVC-WHITE',
@@ -80,6 +85,7 @@ const ITEM_SEEDS: ItemSeed[] = [
     cost: 260,
     stockQuantity: 60,
     reorderThreshold: 15,
+    dimensionDefaults: { thickness: [], width: [], length: [] },
   },
 ];
 
@@ -112,6 +118,7 @@ async function findOrCreateItem(itemModel: Model<ItemDocument>, seed: ItemSeed, 
     categoryId,
     isWood: seed.isWood,
     pricingMode: seed.pricingMode,
+    dimensionDefaults: seed.dimensionDefaults,
     unitPrice: roundMoney(seed.unitPrice),
     cost: roundMoney(seed.cost),
     stockQuantity: seed.stockQuantity,
@@ -122,7 +129,7 @@ async function findOrCreateItem(itemModel: Model<ItemDocument>, seed: ItemSeed, 
   console.log(`Item created: ${seed.code} — ${seed.name}`);
 }
 
-async function seedCatalog() {
+export async function seedCatalog() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -151,7 +158,9 @@ async function seedCatalog() {
   }
 }
 
-seedCatalog().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedCatalog().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

@@ -9,8 +9,8 @@ Your responsibility is correct, maintainable, secure, and performant
 implementation that matches this project's architecture and docs.
 
 Read before coding: `docs/OVERVIEW.md`, `docs/DATABASE.md`, and `docs/PHASES.md`.
-The frontend lives in `../Al-Mohamadia-Frontend/` (see its `docs/AGENTS.md` /
-`docs/Design-System.md`). Do not ask the user to re-explain the domain.
+The frontend lives in `../Al-Mohamadia-Frontend/` (see its `AGENTS.md` /
+`docs/DESIGN-SYSTEM.md`). Do not ask the user to re-explain the domain.
 
 When implementing product behavior: follow patterns in `src/modules/` and
 `src/shared/` (as they appear from Phase 0 onward). Prefer simple, robust
@@ -44,7 +44,7 @@ Axios feature wrappers unless explicitly requested.
 Scripts: `npm run start:dev`, `build`, `start:prod`, `lint`, `test`,
 `test:e2e`.
 
-Client: [Al-Mohamadia-Frontend](../../Al-Mohamadia-Frontend) talks **only** to
+Client: [Al-Mohamadia-Frontend](../Al-Mohamadia-Frontend) talks **only** to
 this API under `/api/v1`.
 
 ------------------------------------------------------------
@@ -118,7 +118,7 @@ Domains (ownership):
    `{feature}.controller.ts`, `{feature}.service.ts`, `*.schema.ts`,
    `*.dto.ts`.
 5. Soft-delete / active flags (`isDeleted`, `isActive`) and timestamps
-   (`createdAt` / `updatedAt`) must match [`DATABASE.md`](./DATABASE.md).
+   (`createdAt` / `updatedAt`) must match [`DATABASE.md`](docs/DATABASE.md).
 6. Never trust client-computed fields (`remaining`, `balance`, `amountOwed`,
    `lineTotal`, price snapshots) — always recompute server-side.
 7. Any mutation touching more than one collection (invoice save/cancel,
@@ -140,7 +140,7 @@ Domains (ownership):
 | Other mutations | Set `changes` per-field `{ old, new }`; leave refs null |
 
 Optional `summary` for list UIs. Never update/delete audit rows.
-See [`DATABASE.md`](./DATABASE.md).
+See [`DATABASE.md`](docs/DATABASE.md).
 
 ## Soft delete / immutability
 
@@ -161,7 +161,7 @@ See [`DATABASE.md`](./DATABASE.md).
 | Bootstrap | `src/main.ts`, `src/app.module.ts` |
 | Feature code | `src/modules/{feature}/` |
 | Shared guards/filters | `src/shared/` (Phase 0+) |
-| Frontend contract | `../Al-Mohamadia-Frontend/docs/AGENTS.md` |
+| Frontend contract | `../Al-Mohamadia-Frontend/AGENTS.md` |
 
 ------------------------------------------------------------
 
@@ -201,9 +201,9 @@ Hard rules — never weaken for convenience.
 - Manual stock corrections call `POST /inventory/adjustments`, which updates
   `Item.stockQuantity` and writes `stock_adjusted` on `AuditLog` with the
   reason. Never a bare field update.
-- Dimensions (`thickness` × `width` × `length`, cm) are required on sales
+- Dimensions (`thickness` × `width` × `length`, m) are required on sales
   lines only when item `pricingMode` is `per_cubic_meter`.
-  - Volume m³ = `(T × W × L) / 1_000_000` (6 dp).
+  - Volume m³ = `T × W × L` (6 dp).
   - `lineTotal` = `quantity × volume × piecePrice` (cubic) or
     `quantity × piecePrice` (piece).
   - Stock deduct: cubic → `quantity × volume`; piece → `quantity`.
@@ -254,6 +254,30 @@ Hard rules — never weaken for convenience.
 
 # CLEAN CODE
 
+## Responsibility and placement rules
+
+| Concern | Location | Responsibility |
+|---|---|---|
+| HTTP endpoints | feature `*.controller.ts` | Guards, transport input, delegate to the service |
+| Application operations | feature `*.service.ts` | Business orchestration, queries, transactions, audit |
+| Request/response validation | feature `dto/` | Transport contracts and decorators |
+| Persistence model | feature `schemas/` | Mongoose schemas and indexes |
+| Named internal contracts | feature `types/` | Aggregation rows, internal input/result types |
+| Pure transformations/query construction | feature `utils/` | Parsing, mappings, Mongo expressions and pipelines |
+| Fixed configuration values | feature `*.constants.ts` or `constants/` | Declarative values, not executable predicates |
+| Cross-feature behavior | `src/shared/` | Only concerns with established cross-feature ownership |
+
+- Services must not declare named type aliases/interfaces or standalone helper functions (including arrow helpers). Import those from the owning feature's `types/` or `utils/`.
+- Private methods that orchestrate service operations may stay in the service. Small inline parameter shapes may stay beside their consumer. Do not extract merely to meet a line-count target.
+- Keep Mongo pipeline builders pure and typed with `PipelineStage[]`; execute them through injected models in services. Feature-specific expressions remain feature-owned.
+- Search existing feature/shared code before adding helpers. Promote to shared ownership only when actual callers in multiple features establish the need.
+- No generic dumping-ground files, circular imports, pass-through layers, or production exports created solely for tests. Test the production implementation through its real interface.
+- Preserve transaction/session propagation, audit writes, rounding, stored pricing snapshots, and legacy fallback semantics while moving code.
+- Use responsibility names such as `dashboard-aggregation.util.ts` and `category-reference.util.ts`, not vague `helpers.ts`.
+- `npm run build` automatically runs the architecture placement check through `prebuild`.
+- Before finishing, run `npm run check:architecture` and `npm run test:architecture`, then build, relevant tests, and lint without auto-fixing unrelated files. Report pre-existing failures separately. Never disable a placement rule to make a failing refactor pass.
+
+
 - Typed DTOs and Mongoose schemas. Avoid `any` in new code; do not ignore
   TypeScript errors.
 - One responsibility per service method. Fail with clear Nest HTTP
@@ -302,6 +326,7 @@ Hard rules — never weaken for convenience.
 
 # SELF-CHECK (BEFORE FINISHING)
 
+- [ ] `npm run check:architecture` and `npm run test:architecture` pass
 - [ ] Code lives in the correct feature module; controllers stay thin
 - [ ] Role guards applied correctly (`super_admin` vs operational)
 - [ ] DTOs validated; unknown fields forbidden
@@ -322,9 +347,18 @@ Hard rules — never weaken for convenience.
 
 # FURTHER READING
 
-- [`OVERVIEW.md`](./OVERVIEW.md) — domains, consumers, setup, business overview
-- [`../README.md`](../README.md) — public GitHub project README
-- [`DATABASE.md`](./DATABASE.md) — Mongo schema and relationships
-- [`PHASES.md`](./PHASES.md) — vertical-slice build plan
-- [`../../Al-Mohamadia-Frontend/docs/AGENTS.md`](../../Al-Mohamadia-Frontend/docs/AGENTS.md) — UI conventions
-- [`.env.example`](../.env.example) — env template
+- [`OVERVIEW.md`](docs/OVERVIEW.md) — domains, consumers, setup, business overview
+- [`README.md`](README.md) — public GitHub project README
+- [`DATABASE.md`](docs/DATABASE.md) — Mongo schema and relationships
+- [`PHASES.md`](docs/PHASES.md) — vertical-slice build plan
+- [`../Al-Mohamadia-Frontend/AGENTS.md`](../Al-Mohamadia-Frontend/AGENTS.md) — UI conventions
+- [`.env.example`](.env.example) — env template
+
+## Local verification preference
+
+Do not access the frontend through a browser unless the user explicitly changes this preference. Verify API behavior with temporary test databases and provide a manual frontend checklist.
+
+## Workspace change constraints
+
+Keep requested refactors behavior-preserving. Do not change database records or indexes,
+commit, push, or deploy unless the user explicitly requests those actions.

@@ -9,7 +9,3 @@ export const UserAuditAction = {
 } as const;
 
 export const USER_AUDIT_ACTIONS: readonly string[] = Object.values(UserAuditAction);
-
-export function isUserAuditAction(action: string): boolean {
-  return USER_AUDIT_ACTIONS.includes(action);
-}

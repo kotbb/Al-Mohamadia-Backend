@@ -32,6 +32,18 @@ export class SalesInvoicesController {
     return this.salesInvoicesService.getSharePayload(id);
   }
 
+  // GET /sales-invoices/:id/receipt
+  @Get(':id/receipt')
+  public getReceipt(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.salesInvoicesService.getReceipt(id);
+  }
+
+  // GET /sales-invoices/:id/neighbors
+  @Get(':id/neighbors')
+  public getNeighbors(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.salesInvoicesService.getNeighbors(id);
+  }
+
   // GET /sales-invoices/:id
   @Get(':id')
   public findOne(@Param('id', ParseObjectIdPipe) id: string) {

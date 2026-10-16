@@ -38,6 +38,7 @@ describe('PurchasesService', () => {
     updateOne: jest.Mock;
   };
   let auditService: { log: jest.Mock };
+  let supplierPaymentModel: { create: jest.Mock; updateMany: jest.Mock };
   let connection: { startSession: jest.Mock };
   let session: {
     startTransaction: jest.Mock;
@@ -144,7 +145,7 @@ describe('PurchasesService', () => {
       log: jest.fn().mockResolvedValue(undefined),
     };
 
-    const supplierPaymentModel = {
+    supplierPaymentModel = {
       create: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
     };
@@ -206,6 +207,9 @@ describe('PurchasesService', () => {
           {
             itemId: itemIdPiece,
             quantity: 10,
+            thickness: 0.018,
+            width: 1.22,
+            length: 2.44,
             unitCost: 80,
           },
         ],
@@ -215,6 +219,15 @@ describe('PurchasesService', () => {
 
       const result = await service.create(dto, actor);
 
+      expect(purchaseInvoiceModel.create.mock.calls[0][0][0].lines[0]).toEqual(
+        expect.objectContaining({
+          thickness: 0.018,
+          width: 1.22,
+          length: 2.44,
+          pricingModeSnapshot: PricingMode.PER_PIECE,
+          lineTotal: 800,
+        }),
+      );
       expect(result.invoiceNumber).toBe('PUR-0042');
       expect(result.total).toBe(800);
       expect(result.paid).toBe(300);
@@ -267,9 +280,9 @@ describe('PurchasesService', () => {
           {
             itemId: { toString: () => itemIdCubic },
             quantity: 10,
-            width: 10,
-            length: 400,
-            thickness: 5,
+            width: 0.1,
+            length: 4,
+            thickness: 0.05,
             unitCost: 8000,
             lineTotal: 1600,
             note: null,
@@ -293,9 +306,9 @@ describe('PurchasesService', () => {
             itemId: itemIdCubic,
             quantity: 10,
             unitCost: 8000,
-            thickness: 5,
-            width: 10,
-            length: 400,
+            thickness: 0.05,
+            width: 0.1,
+            length: 4,
           },
         ],
         paid: 1600,
@@ -315,6 +328,89 @@ describe('PurchasesService', () => {
 
       // Paid in full: remaining is 0, so supplier amountOwed remains unchanged
       expect(supplier.amountOwed).toBe(10000);
+    });
+
+    it('records excess payment against prior supplier debt in the same transaction', async () => {
+      const supplier = makeSupplier({ amountOwed: 9983 });
+      supplierModel.findOne.mockReturnValue(mockQuery(supplier));
+      itemModel.find.mockReturnValue(mockQuery([makePieceItem()]));
+      purchaseInvoiceModel.create.mockResolvedValue([
+        {
+          _id: { toString: () => purchaseId },
+          invoiceNumber: 'PUR-0042',
+          supplierId: { toString: () => supplierId },
+          lines: [
+            {
+              itemId: { toString: () => itemIdPiece },
+              quantity: 2,
+              width: null,
+              length: null,
+              thickness: null,
+              unitCost: 380,
+              lineTotal: 760,
+              note: null,
+            },
+          ],
+          total: 760,
+          paid: 760,
+          remaining: 0,
+          status: PurchaseInvoiceStatus.SAVED,
+          notes: null,
+          createdBy: { toString: () => actor.id },
+          get: () => new Date(),
+        },
+      ]);
+      supplierPaymentModel.create.mockImplementation((payments) =>
+        payments.map((payment: { amount: number; purchaseInvoiceId: unknown }) => ({
+          ...payment,
+          _id: { toString: () => purchaseId },
+          method: 'cash',
+        })),
+      );
+
+      const result = await service.create(
+        {
+          supplierId,
+          lines: [{ itemId: itemIdPiece, quantity: 2, unitCost: 380 }],
+          paid: 760,
+          existingDebtPayment: 9983,
+        },
+        actor,
+      );
+
+      expect(result.paid).toBe(760);
+      expect(result.remaining).toBe(0);
+      expect(supplier.amountOwed).toBe(0);
+      expect(supplierPaymentModel.create).toHaveBeenCalledTimes(2);
+      expect(supplierPaymentModel.create).toHaveBeenNthCalledWith(
+        2,
+        [expect.objectContaining({ amount: 9983, purchaseInvoiceId: null })],
+        { session },
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'supplier_payment_recorded' }),
+        session,
+      );
+      expect(session.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('rejects a payment beyond the supplier debt and rolls back', async () => {
+      supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier({ amountOwed: 100 })));
+      itemModel.find.mockReturnValue(mockQuery([makePieceItem()]));
+
+      await expect(
+        service.create(
+          {
+            supplierId,
+            lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 100 }],
+            paid: 100,
+            existingDebtPayment: 101,
+          },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(purchaseInvoiceModel.create).not.toHaveBeenCalled();
+      expect(session.abortTransaction).toHaveBeenCalled();
     });
 
     it('fails if no lines are provided', async () => {
@@ -421,6 +517,70 @@ describe('PurchasesService', () => {
             width: null,
             length: null,
             thickness: null,
+            unitCost: 100,
+            lineTotal: 1000,
+            note: null,
+          },
+        ],
+        total: 1000,
+        paid: 400,
+        remaining: 600,
+        status: PurchaseInvoiceStatus.SAVED,
+        notes: null,
+        createdBy: { toString: () => actor.id },
+        save: jest.fn().mockResolvedValue(undefined),
+        get: (key: string) => (key === 'createdAt' || key === 'updatedAt' ? new Date() : undefined),
+      };
+
+      purchaseInvoiceModel.findById.mockReturnValue(mockQuery(invoice));
+      itemModel.find.mockReturnValue(mockQuery([item]));
+      supplierModel.findById.mockReturnValue(mockQuery(supplier));
+
+      const result = await service.cancel(purchaseId, actor);
+
+      expect(result.status).toBe(PurchaseInvoiceStatus.CANCELLED);
+
+      // Reverses stock: -10
+      expect(itemModel.updateOne).toHaveBeenCalledWith(
+        { _id: { toString: expect.any(Function) } },
+        { $inc: { stockQuantity: -10 } },
+        { session },
+      );
+
+      // Reverses debt: amountOwed was 5000, remaining was 600 -> 5000 - 600 = 4400
+      expect(supplier.amountOwed).toBe(4400);
+      expect(supplier.save).toHaveBeenCalledWith({ session });
+
+      // Audit logged
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actor.id,
+          action: 'purchase_cancelled',
+          entityType: 'PurchaseInvoice',
+          entityId: purchaseId,
+        }),
+        session,
+      );
+
+      expect(session.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('reverses dimension-bearing piece stock using snapshot after item pricing changes', async () => {
+      const supplier = makeSupplier({ amountOwed: 5000 });
+      const item = makePieceItem({ pricingMode: PricingMode.PER_CUBIC_METER });
+
+      const invoice = {
+        _id: { toString: () => purchaseId },
+        invoiceNumber: 'PUR-0042',
+        supplierId: { toString: () => supplierId },
+        lines: [
+          {
+            itemId: { toString: () => itemIdPiece },
+            quantity: 10,
+            width: 1.22,
+            length: 2.44,
+            thickness: 0.018,
+            pricingModeSnapshot: PricingMode.PER_PIECE,
             unitCost: 100,
             lineTotal: 1000,
             note: null,

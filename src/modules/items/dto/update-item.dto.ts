@@ -1,4 +1,16 @@
-import { IsBoolean, IsEnum, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsObject,
+  ValidateNested,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { DimensionDefaultsDto } from './dimension-defaults.dto';
 import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 
 export class UpdateItemDto {
@@ -21,6 +33,12 @@ export class UpdateItemDto {
   @IsOptional()
   @IsEnum(PricingMode)
   pricingMode?: PricingMode;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DimensionDefaultsDto)
+  dimensionDefaults?: DimensionDefaultsDto;
 
   @IsOptional()
   @IsNumber()

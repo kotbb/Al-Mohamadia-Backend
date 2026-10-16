@@ -7,8 +7,9 @@ import { formatCairoDate } from '../../shared/utils/period/cairo-period.util';
 import { Customer } from '../customers/schemas/customer.schema';
 import { Item } from '../items/schemas/item.schema';
 import { Payment } from '../payments/schemas/payment.schema';
+import { OperatingExpense } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
-import { DashboardService, lineCogsFromFields } from './dashboard.service';
+import { DashboardService } from './dashboard.service';
 import { GetDashboardQueryDto } from './dto/get-dashboard-query.dto';
 
 function pipelineIncludesRound6(pipeline: unknown[]): boolean {
@@ -25,6 +26,7 @@ describe('DashboardService', () => {
   let paymentModel: {
     aggregate: jest.Mock;
   };
+  let operatingExpenseModel: { aggregate: jest.Mock };
   let customerModel: {
     aggregate: jest.Mock;
   };
@@ -39,12 +41,13 @@ describe('DashboardService', () => {
 
   beforeEach(async () => {
     salesInvoiceModel = {
-      aggregate: jest.fn(),
+      aggregate: jest.fn().mockResolvedValue([]),
       find: jest.fn(),
     };
     paymentModel = {
       aggregate: jest.fn(),
     };
+    operatingExpenseModel = { aggregate: jest.fn().mockResolvedValue([]) };
     customerModel = {
       aggregate: jest.fn(),
     };
@@ -57,6 +60,7 @@ describe('DashboardService', () => {
         DashboardService,
         { provide: getModelToken(SalesInvoice.name), useValue: salesInvoiceModel },
         { provide: getModelToken(Payment.name), useValue: paymentModel },
+        { provide: getModelToken(OperatingExpense.name), useValue: operatingExpenseModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: getModelToken(Item.name), useValue: itemModel },
       ],
@@ -91,10 +95,30 @@ describe('DashboardService', () => {
       expect(result.today).toEqual({
         sales: 0,
         estimatedProfit: 0,
+        operatingExpenses: 0,
+        estimatedNetProfit: 0,
         invoiceCount: 0,
         collected: 0,
       });
       expect(result.debt).toEqual({ totalDebt: 0, debtorCount: 0 });
+    });
+
+    it('subtracts active dated operating expenses from gross profit for today and the selected period', async () => {
+      stubEmptyAggregates();
+      operatingExpenseModel.aggregate.mockResolvedValueOnce([{ amount: 25 }]).mockResolvedValueOnce([{ amount: 80 }]);
+      const result = await service.getDashboard({
+        period: SalesInvoicePeriod.MONTH,
+        date: formatCairoDate(new Date()),
+      });
+      expect(result.today).toMatchObject({ estimatedProfit: 0, operatingExpenses: 25, estimatedNetProfit: -25 });
+      expect(result.periodFinancials).toEqual({
+        sales: 0,
+        estimatedGrossProfit: 0,
+        operatingExpenses: 80,
+        estimatedNetProfit: -80,
+      });
+      const match = operatingExpenseModel.aggregate.mock.calls[0][0][0].$match;
+      expect(match).toMatchObject({ isDeleted: false, expenseDate: { $gte: formatCairoDate(new Date()) } });
     });
 
     it('fails if period is given without date', async () => {
@@ -113,6 +137,15 @@ describe('DashboardService', () => {
         date: '2026-02-31',
       };
       await expect(service.getDashboard(query)).rejects.toThrow(BadRequestException);
+    });
+
+    it('uses custom inclusive dates for period totals and chart buckets', async () => {
+      stubEmptyAggregates();
+      const result = await service.getDashboard({ from: '2026-10-01', to: '2026-10-03' });
+      expect(result.period.period).toBe('custom');
+      expect(result.salesSeries.map((point) => point.bucketStart)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03']);
+      expect(formatCairoDate(new Date(result.period.to))).toBe('2026-10-04');
+      await expect(service.getDashboard({ from: '2026-10-03', to: '2026-10-01' })).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -213,8 +246,7 @@ describe('DashboardService', () => {
       const cogsMatch = (salesCalls[1][0] as { $match: Record<string, unknown> }[])[0].$match;
       expect(cogsMatch.status).toBe(SalesInvoiceStatus.SAVED);
 
-      const paymentMatch = (paymentModel.aggregate.mock.calls[0][0] as { $match: Record<string, unknown> }[])[0]
-        .$match;
+      const paymentMatch = (paymentModel.aggregate.mock.calls[0][0] as { $match: Record<string, unknown> }[])[0].$match;
       expect(paymentMatch.reversedAt).toBeNull();
       expect(paymentMatch.createdAt).toEqual(
         expect.objectContaining({
@@ -250,10 +282,7 @@ describe('DashboardService', () => {
     });
 
     it('buckets period invoices into salesSeries', async () => {
-      salesInvoiceModel.aggregate
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([]);
+      salesInvoiceModel.aggregate.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       paymentModel.aggregate.mockResolvedValue([]);
       customerModel.aggregate.mockResolvedValue([]);
 
@@ -348,33 +377,6 @@ describe('DashboardService', () => {
         quantity: 1,
         revenue: 100,
       });
-    });
-  });
-
-  describe('lineCogsFromFields', () => {
-    it('uses quantity × cost for per-piece lines (no dimensions)', () => {
-      expect(
-        lineCogsFromFields({
-          quantity: 3,
-          costPriceSnapshot: 100,
-          width: null,
-          length: null,
-          thickness: null,
-        }),
-      ).toBe(300);
-    });
-
-    it('uses quantity × volume × cost for cubic lines', () => {
-      // 2 × (5×10×200 / 1e6) × 800 = 2 × 0.01 × 800 = 16
-      expect(
-        lineCogsFromFields({
-          quantity: 2,
-          costPriceSnapshot: 800,
-          thickness: 5,
-          width: 10,
-          length: 200,
-        }),
-      ).toBe(16);
     });
   });
 });

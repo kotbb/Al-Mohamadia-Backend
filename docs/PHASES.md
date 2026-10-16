@@ -11,7 +11,7 @@ backend, before the next phase starts. Do not build "the whole backend"
 then "the whole frontend" — and do not silently expand a phase's scope.
 
 Update this file's checkboxes/status as phases complete (in both copies),
-and update `docs/DATABASE.md` (backend) / `docs/Design-System.md` (frontend) /
+and update `docs/DATABASE.md` (backend) / `docs/DESIGN-SYSTEM.md` (frontend) /
 `docs/OVERVIEW.md` in the same PR whenever a phase changes the
 schema or business rules.
 
@@ -28,7 +28,7 @@ No business feature yet; this unblocks every later phase.
 - API versioning under `/api/v1`, health check endpoint
 
 **Frontend**
-- Tailwind theme tokens wired from `docs/Design-System.md` (light/dark CSS variables)
+- Tailwind theme tokens wired from `docs/DESIGN-SYSTEM.md` (light/dark CSS variables)
 - i18n setup: `ar` (default, RTL) / `en` (LTR) routing + dictionaries
 - Root layout with `dir` + theme toggle + language toggle
 - Shared API client wrapper (base URL from `NEXT_PUBLIC_API_URL`)
@@ -73,7 +73,7 @@ UI or API routes.
 
 - [x] Items list grouped by category, search/filters
 - [x] Categories list page (create/edit modal, activate/deactivate/delete; delete blocked when items exist)
-- [x] Add/edit item **modal** (pricing mode toggle; auto-generated editable code)
+- [x] Add/edit item **pages** (pricing mode toggle; auto-generated editable code)
 - [x] Price history **modal** per item
 - [x] Soft-delete item with confirmation (row actions kebab menu)
 - [x] Users page polish: row actions, create/edit admin modal, activate/deactivate/delete confirms
@@ -146,14 +146,15 @@ Modules: `src/modules/customers`, `suppliers`.
 - [x] Dev seed: `npm run seed:invoices`
 - [x] Invoice editing (`PATCH /sales-invoices/:id`): transactional stock revert & reapply, customer balance adjustment, in-place payment update, audit `invoice_updated`
 - [x] Client-side A4 PDF generation + public tokenized JSON receipt (`GET /public/sales-invoices/:token`) + WhatsApp share payload (`GET .../share`)
+- [x] Authenticated self-contained receipt (`GET /sales-invoices/:id/receipt`) and same-customer neighbors (`GET /sales-invoices/:id/neighbors`); existing public links remain valid
 
 **Frontend** — *Done*
 
-- [x] New-invoice modal dialog: customer search-or-cash toggle, multi-line item entry
-  with dimension fields shown conditionally for `per_cubic_meter`, live
+- [x] New-invoice page: customer search-or-cash toggle, multi-line item entry
+  with optional piece dimensions and required cubic dimensions, live
   totals, discount, paid/remaining
-- [x] Invoice list with filters + search, total sales summary card, and primary "فاتورة جديدة" action opening the creation modal
-- [x] Invoice detail view; Save / Save & Print (auto-print preview modal); client-side PDF export / WhatsApp share
+- [x] Invoice list with filters + search, total sales summary card, and primary "فاتورة جديدة" action opening `/invoices/new`
+- [x] Invoice detail view; Save returns to detail; Save & Print opens export with PNG A5 default, PDF A4, price visibility, print and sharing
 - [x] Cancel invoice action
 - [x] Public receipt page (`/[locale]/invoices/public/[token]`) with client-side print and PDF download
 
@@ -165,11 +166,13 @@ applicable) customer debt update correctly, edit it with atomic stock/balance re
 | Resource | Endpoints |
 |----------|-----------|
 | Sales Invoices | `POST/GET /sales-invoices`, `GET /sales-invoices/:id`, `PATCH /sales-invoices/:id`, `POST /sales-invoices/:id/cancel` |
-| Share & Public Receipt | `GET /public/sales-invoices/:token`, `GET /sales-invoices/:id/share` |
+| Receipt and navigation | `GET /sales-invoices/:id/receipt`, `GET /sales-invoices/:id/neighbors` |
+| Legacy Share & Public Receipt | `GET /public/sales-invoices/:token`, `GET /sales-invoices/:id/share` |
 
 List query params: `status`, `period`, `date`, `q`, `page`, `limit`.
 List response: `{ items, meta, summary: { totalAmount } }` (`totalAmount` is saved invoices matching the other filters).
 Create body: `{ customerId?, type, lines: [{ itemId, quantity, piecePrice?, width?, length?, thickness?, note? }], discount?, paid?, paymentMethod?, paymentNotes? }`.
+Line dimensions `width`, `length`, and `thickness` are meters.
 Update body: `UpdateSalesInvoiceDto` (same shape as create, validates and reconciles stock, customer balance, and linked payments).
 
 Module: `src/modules/sales-invoices`.
@@ -259,6 +262,7 @@ supplier's owed amount, supplier payments can be recorded and cancelled, both vi
 
 List query params (Purchases): `supplierId`, `status`, `period`, `date`, `q`, `page`, `limit`.
 Create body (Purchases): `{ supplierId, lines: [{ itemId, quantity, unitCost, width?, length?, thickness?, note? }], paid?, paymentMethod?, paymentNotes?, notes? }`.
+Line dimensions `width`, `length`, and `thickness` are meters.
 List query params (Supplier payments): `supplierId`, `purchaseId`, `status`, `type`, `method`, `period`, `date`, `page`, `limit`.
 Create body (Supplier payments): `{ supplierId, amount, method?, notes? }`.
 List response: `{ items, meta, summary: { totalAmount } }`.
@@ -316,14 +320,14 @@ Module: `src/modules/inventory`.
 **Backend** — *Done*
 
 - [x] Aggregation endpoint `GET /dashboard`: today's sales (net) / estimated profit / invoice count / collected
-- [x] Live customer debt strip: `totalDebt` + `debtorCount` (`balance > 0`)
+- [x] Live customer debt KPI: `totalDebt` + `debtorCount` (`balance > 0`)
 - [x] Period-filterable `salesSeries` (day / week / month / year, Cairo, zero-filled buckets) + top 5 selling items by revenue
 - [x] Defaults to current Cairo month when `period`/`date` omitted; pair-validation matches other list endpoints
 - [x] Unit tests for formulas, defaults, validation, and bucket counts
 
 **Frontend** — *Done*
 
-- [x] Dashboard page on `/`: today KPIs, debt strip, period chart + top sellers
+- [x] Dashboard page on `/`: today KPIs, debt KPI, period chart + top sellers
 - [x] Wired to `GET /dashboard`; period filter + New Invoice header shortcut; debt → customers `?hasDebt=1`
 
 **Done when:** dashboard numbers match what you'd compute manually from the
@@ -373,10 +377,25 @@ Module: `src/modules/audit` (backend).
 
 ---
 
+## Operating expenses extension
+
+- [x] Paid EGP operating expense ledger, Cairo expense date, editable categories,
+  audited edits and terminal soft deletes; separate from stock purchases and supplier payments.
+- [x] Authenticated `/operating-expenses` route group with nested `/categories` routes; `npm run seed:expenses` seeds the starter categories on demand.
+  The ledger summary covers all active matching records independently of page.
+- [x] Dashboard preserves `today.estimatedProfit` as gross profit and adds
+  `today.operatingExpenses`, `today.estimatedNetProfit`, and `periodFinancials`
+  with sales, gross profit, operating expenses, and estimated net profit.
+- [x] Frontend Finance destination, bilingual ledger, filters, forms, detail,
+  category management, soft delete confirmation, and dashboard cards.
+- [x] Custom inclusive Cairo `from`/`to` ranges for invoices, customer payments,
+  purchases, supplier payments, and dashboard; operating expenses use the same picker.
+- [x] Operating expenses use terminal soft deletion through `isDeleted`; no expense migration command is included.
+
 ## Phase 10 — Polish & Hardening
 
 - Full i18n pass (no missed/hardcoded strings in either language)
-- Full light/dark pass against `docs/Design-System.md` tokens
+- Full light/dark pass against `docs/DESIGN-SYSTEM.md` tokens
 - Responsive/mobile pass
 - Loading / error / empty states everywhere
 - API hardening: rate limiting, input validation edge cases, consistent
@@ -385,9 +404,7 @@ Module: `src/modules/audit` (backend).
   entirely client-side on the frontend via HTML5 print and `html2pdf.js`,
   eliminating heavy Chromium and Puppeteer headless browser dependencies from
   the backend and avoiding Vercel serverless execution timeout limits.
-- Preview deploy: personal Vercel Hobby (one project per repo, hosts from
-  env) and portable Compose. Compose reads each repo's `.env`. On Vercel,
-  `MONGO_URI` ends in `/prod`.
+- Deployment configuration must be verified for the selected runtime. The checkout includes Compose; no backend `vercel.json` is present. No deployment is performed by documentation or build checks.
 
 ---
 
@@ -406,3 +423,22 @@ Module: `src/modules/audit` (backend).
 | 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Done | Done |
 | 10 — Polish & Hardening | Done | Done |
+
+### Compact inventory and invoice dimension additions
+
+- [x] Compact inventory category tables retain eight columns, counts for the current page, existing actions, filters and pagination.
+- [x] Localized item creation/edit pages replace catalog form modals.
+- [x] Shared dashed Add line/Add value buttons and invoice preset addition for sales create/edit and purchase create.
+- [x] POST /api/v1/items/:id/dimension-defaults appends positive meter defaults transactionally with item-edit auditing; duplicates are no-ops.
+- [ ] Manual visual/interaction checks in both languages and on mobile (browser access intentionally skipped).
+
+## Current workflow additions
+
+- [x] Invoice export page defaults to PNG A5; PDF A4, price visibility, printing and sharing remain available.
+- [x] Shared loading screen for route/auth transitions; global/localized error and not-found surfaces.
+- [x] Root AGENTS.md is the single instruction file in each repository; architecture checks run before builds.
+- [ ] Manual English/Arabic, light/dark and mobile verification remains separate from automated checks.
+
+## Planned: recurring operating expenses
+
+Not implemented: configurable repeat intervals, first/optional end dates, due/overdue occurrences, one full payment per occurrence, skip reasons, pause/resume/stop, and dashboard due counts. Only confirmed payments will enter the existing paid ledger. Email reminders and partial payments are deferred. No recurrence collections, endpoints or scheduler exist yet.

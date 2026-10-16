@@ -4,6 +4,20 @@ import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 
 export type ItemDocument = HydratedDocument<Item>;
 
+@Schema({ _id: false })
+export class ItemDimensionDefaults {
+  @Prop({ type: [Number], default: [] })
+  thickness: number[];
+
+  @Prop({ type: [Number], default: [] })
+  width: number[];
+
+  @Prop({ type: [Number], default: [] })
+  length: number[];
+}
+
+const ItemDimensionDefaultsSchema = SchemaFactory.createForClass(ItemDimensionDefaults);
+
 @Schema({ timestamps: true })
 export class Item {
   @Prop({ required: true, trim: true })
@@ -20,6 +34,9 @@ export class Item {
 
   @Prop({ type: String, required: true, enum: PricingMode })
   pricingMode: PricingMode;
+
+  @Prop({ type: ItemDimensionDefaultsSchema, default: () => ({}) })
+  dimensionDefaults: ItemDimensionDefaults;
 
   @Prop({ default: 0 })
   unitPrice: number;

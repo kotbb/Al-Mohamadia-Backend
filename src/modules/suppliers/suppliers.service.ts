@@ -9,7 +9,7 @@ import { ListSuppliersQueryDto } from './dto/list-suppliers-query.dto';
 import { SupplierListResponseDto, SupplierResponseDto } from './dto/supplier-response.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
-import { normalizePhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
+import { normalizeOptionalPhone } from '../../shared/utils/normalize-phone/normalize-phone.util';
 import { normalizeOptionalAddress } from '../../shared/utils/normalize-optional-address/normalize-optional-address.util';
 import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { PurchaseInvoice, PurchaseInvoiceDocument } from '../purchases/schemas/purchase-invoice.schema';
@@ -28,7 +28,7 @@ export class SuppliersService {
 
   public async create(dto: CreateSupplierDto, user: AuthUser): Promise<SupplierResponseDto> {
     const name = dto.name.trim();
-    const phone = this.normalizeOptionalPhone(dto.phone);
+    const phone = normalizeOptionalPhone(dto.phone);
     const address = normalizeOptionalAddress(dto.address);
     const amountOwed = roundMoney(dto.amountOwed ?? 0);
 
@@ -135,7 +135,7 @@ export class SuppliersService {
     }
 
     if (dto.phone !== undefined) {
-      const phone = this.normalizeOptionalPhone(dto.phone);
+      const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== supplier.phone) {
         if (phone) {
           const existing = await this.supplierModel
@@ -268,7 +268,7 @@ export class SuppliersService {
     }
 
     if (dto.phone !== undefined) {
-      const phone = this.normalizeOptionalPhone(dto.phone);
+      const phone = normalizeOptionalPhone(dto.phone);
       if (phone !== target.phone) {
         if (phone) {
           const excludedIds = [target._id, ...sources.map((source) => source._id)];
@@ -350,14 +350,6 @@ export class SuppliersService {
   }
 
   // ----------------- Helper Methods -----------------
-  private normalizeOptionalPhone(value?: string): string | null {
-    if (value === undefined || value === null) {
-      return null;
-    }
-    const normalized = normalizePhone(value);
-    return normalized.length > 0 ? normalized : null;
-  }
-
   private buildListFilter(query: ListSuppliersQueryDto): SupplierListFilter {
     const filter: SupplierListFilter = { isDeleted: false };
 

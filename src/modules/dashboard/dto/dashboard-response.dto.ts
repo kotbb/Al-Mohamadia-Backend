@@ -3,8 +3,17 @@ import { SalesInvoicePeriod } from '../../../shared/enums/sales-invoice-period.e
 export class DashboardTodayDto {
   sales: number;
   estimatedProfit: number;
+  operatingExpenses: number;
+  estimatedNetProfit: number;
   invoiceCount: number;
   collected: number;
+}
+
+export class DashboardPeriodFinancialsDto {
+  sales: number;
+  estimatedGrossProfit: number;
+  operatingExpenses: number;
+  estimatedNetProfit: number;
 }
 
 export class DashboardDebtDto {
@@ -13,7 +22,7 @@ export class DashboardDebtDto {
 }
 
 export class DashboardPeriodDto {
-  period: SalesInvoicePeriod;
+  period: SalesInvoicePeriod | 'custom';
   date: string;
   from: string;
   to: string;
@@ -34,6 +43,7 @@ export class DashboardTopSellingItemDto {
 
 export class DashboardResponseDto {
   today: DashboardTodayDto;
+  periodFinancials: DashboardPeriodFinancialsDto;
   debt: DashboardDebtDto;
   period: DashboardPeriodDto;
   salesSeries: DashboardSalesSeriesPointDto[];

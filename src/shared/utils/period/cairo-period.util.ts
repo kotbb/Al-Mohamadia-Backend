@@ -119,6 +119,14 @@ export function cairoInclusiveDateBounds(from?: string, to?: string): CairoDateB
   return bounds;
 }
 
+/** Both endpoints are inclusive Cairo dates; returned `to` is exclusive. */
+export function cairoCustomRange(from?: string, to?: string): CairoPeriodRange {
+  if (!from || !to || from > to) throw new Error('A valid from and to date are required');
+  const bounds = cairoInclusiveDateBounds(from, to);
+  if (!bounds.gte || !bounds.lt) throw new Error('A valid from and to date are required');
+  return { from: bounds.gte, to: bounds.lt };
+}
+
 /**
  * Returns [from, to) UTC range for a Cairo calendar period containing `isoDate`.
  * Week starts Saturday and ends Friday.

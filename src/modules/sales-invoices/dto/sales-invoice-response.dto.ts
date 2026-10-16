@@ -1,9 +1,11 @@
+import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../../shared/enums/sales-invoice-type.enum';
 
 export class SalesInvoiceLineResponseDto {
   itemId: string;
   quantity: number;
+  pricingModeSnapshot: PricingMode;
   width: number | null;
   length: number | null;
   thickness: number | null;

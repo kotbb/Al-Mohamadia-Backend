@@ -64,6 +64,12 @@ export class CreatePurchaseInvoiceDto {
   paid?: number = 0;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @IsMoneyAmount()
+  existingDebtPayment?: number = 0;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   notes?: string;

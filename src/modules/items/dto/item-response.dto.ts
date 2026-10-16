@@ -1,4 +1,5 @@
 import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
+import type { DimensionDefaults } from '../types/dimension-defaults.types';
 
 export class ItemCategorySummaryDto {
   id: string;
@@ -12,6 +13,7 @@ export class ItemResponseDto {
   category: ItemCategorySummaryDto;
   isWood: boolean;
   pricingMode: PricingMode;
+  dimensionDefaults: DimensionDefaults;
   unitPrice: number;
   cost: number;
   stockQuantity: number;

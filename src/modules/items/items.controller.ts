@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ItemsService } from './items.service';
+import { AddDimensionDefaultDto } from './dto/add-dimension-default.dto';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateItemPricingDto } from './dto/update-item-pricing.dto';
@@ -37,6 +38,16 @@ export class ItemsController {
   @Get(':id')
   public findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.itemsService.findOne(id);
+  }
+
+  // POST /items/:id/dimension-defaults
+  @Post(':id/dimension-defaults')
+  public addDimensionDefault(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: AddDimensionDefaultDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.itemsService.addDimensionDefault(id, dto, user);
   }
 
   // PATCH /items/:id/pricing

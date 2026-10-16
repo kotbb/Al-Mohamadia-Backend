@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { PurchaseInvoiceStatus } from '../../../shared/enums/purchase-invoice-status.enum';
 
@@ -11,6 +12,9 @@ export class PurchaseInvoiceLine {
 
   @Prop({ required: true })
   quantity: number;
+
+  @Prop({ type: String, enum: PricingMode, required: false })
+  pricingModeSnapshot?: PricingMode;
 
   @Prop({ type: Number, required: false, default: null })
   width: number | null;

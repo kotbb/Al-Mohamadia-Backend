@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../../shared/enums/sales-invoice-type.enum';
@@ -12,6 +13,9 @@ export class SalesInvoiceLine {
 
   @Prop({ required: true })
   quantity: number;
+
+  @Prop({ type: String, enum: PricingMode, required: false })
+  pricingModeSnapshot?: PricingMode;
 
   @Prop({ type: Number, required: false, default: null })
   width: number | null;
@@ -78,6 +82,7 @@ export const SalesInvoiceSchema = SchemaFactory.createForClass(SalesInvoice);
 SalesInvoiceSchema.index({ invoiceNumber: 1 }, { unique: true });
 SalesInvoiceSchema.index({ createdAt: -1 });
 SalesInvoiceSchema.index({ customerId: 1 });
+SalesInvoiceSchema.index({ customerId: 1, createdAt: 1, _id: 1 });
 SalesInvoiceSchema.index({ status: 1 });
 SalesInvoiceSchema.index(
   { pdfShareToken: 1 },

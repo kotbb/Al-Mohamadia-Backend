@@ -1,9 +1,8 @@
-import { cmToCubicMeters, lineTotalForPricing, stockDeltaForLine } from './cubic-meter.util';
+import { metersToCubicMeters, lineTotalForPricing, stockDeltaForLine } from './cubic-meter.util';
 
 describe('cubic-meter.util', () => {
-  it('converts cm dimensions to m³', () => {
-    // 100 × 50 × 2 cm = 0.01 m³
-    expect(cmToCubicMeters(2, 50, 100)).toBe(0.01);
+  it('multiplies meter dimensions into cubic meters', () => {
+    expect(metersToCubicMeters(0.02, 0.5, 1)).toBe(0.01);
   });
 
   it('computes piece stock delta as quantity', () => {
@@ -20,9 +19,9 @@ describe('cubic-meter.util', () => {
       stockDeltaForLine({
         pricingMode: 'per_cubic_meter',
         quantity: 2,
-        thicknessCm: 2,
-        widthCm: 50,
-        lengthCm: 100,
+        thicknessM: 0.02,
+        widthM: 0.5,
+        lengthM: 1,
       }),
     ).toBe(0.02);
   });
@@ -41,9 +40,9 @@ describe('cubic-meter.util', () => {
         pricingMode: 'per_cubic_meter',
         quantity: 2,
         piecePrice: 850,
-        thicknessCm: 2,
-        widthCm: 50,
-        lengthCm: 100,
+        thicknessM: 0.02,
+        widthM: 0.5,
+        lengthM: 1,
       }),
     ).toBe(17);
   });

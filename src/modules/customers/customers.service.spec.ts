@@ -108,6 +108,20 @@ describe('CustomersService', () => {
   });
 
   describe('create', () => {
+    it('creates multiple customers with no phone', async () => {
+      customerModel.create.mockImplementation(([record]: Array<Record<string, unknown>>) =>
+        Promise.resolve([makeCustomer(record)]),
+      );
+      expect((await service.create({ name: 'No phone', phone: '' }, actor)).phone).toBeNull();
+      expect((await service.create({ name: 'Another customer', phone: '  ' }, actor)).phone).toBeNull();
+    });
+
+    it('allows clearing a customer phone and preserves it when omitted', async () => {
+      const customer = makeCustomer();
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(customer) });
+      expect((await service.update(sourceId, { name: 'Updated' }, actor)).phone).toBe('01012345678');
+      expect((await service.update(sourceId, { phone: '' }, actor)).phone).toBeNull();
+    });
     it('creates with opening balance and writes audit', async () => {
       const result = await service.create(
         {

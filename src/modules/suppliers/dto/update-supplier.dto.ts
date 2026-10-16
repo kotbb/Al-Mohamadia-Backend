@@ -8,7 +8,7 @@ export class UpdateSupplierDto {
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  phone?: string | null;
 
   @IsOptional()
   @IsString()
