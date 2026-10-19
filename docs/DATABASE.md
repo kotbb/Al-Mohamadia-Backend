@@ -85,8 +85,8 @@ string; index on `amountOwed`; compound `name` + `phone`.
 
 **Rules:** only `super_admin` can create, update, and deactivate `User`
 records. That update can set `role` to `admin` or `super_admin`. A super
-admin cannot change their own role. There is exactly one super admin flow
-(seeded), not self-registerable.
+admin cannot change their own role. Creation always provisions an admin; a super admin may change another user’s
+role. This checkout supplies no first-super-admin seed or public registration.
 
 ---
 
@@ -205,9 +205,9 @@ unique partial on `pdfShareToken` where token is a string.
   (`YYYY-MM-DD`) in **Africa/Cairo** (week = Saturday–Friday); search `q`
   by invoice number or customer name/phone.
 - Invoice Sharing & Client-Side PDF:
-  - Zero serverless overhead: PDF generation is decoupled from the backend (no headless browser or Chromium runtime).
-  - Authenticated `GET /sales-invoices/:id/receipt` returns current customer/item names for client-side A4 PDF and A5-width PNG export; `GET /sales-invoices/:id/neighbors` returns adjacent invoice IDs for the same customer.
-  - New sharing sends a browser-generated file. The tokenized endpoints below remain available for previously shared links.
+  - PDF/image rendering is decoupled from the API; there is no backend renderer. The current Docker image still includes unused legacy Chromium tooling.
+  - Authenticated `GET /sales-invoices/:id/receipt` returns current customer/item names for client-side A4 PDF and A5-width PNG export; `GET /sales-invoices/:id/neighbors` returns both numeric invoice-order and same-customer neighbors.
+  - PNG sharing can send a browser-generated image with copy/download fallbacks. PDF sharing sends the public receipt URL; tokenized endpoints remain part of the current workflow.
   - Public invoice endpoint: `GET /api/v1/public/sales-invoices/:token` (unauthenticated, token = `pdfShareToken`) returns self-contained public invoice JSON.
   - Share payload: `GET /sales-invoices/:id/share` → `{ pdfUrl, whatsappUrl, message }`, where `pdfUrl` links directly to the customer-facing web receipt at `${FRONTEND_URL}/ar/invoices/public/:token`.
   - Customers and users view the pixel-perfect branded A4 sheet and export PDF or print client-side. Token does not expire.
@@ -383,7 +383,9 @@ expenses and cannot be assigned to new expenses.
 `OperatingExpense` stores `categoryId`, positive EGP `amount` rounded to two
 decimals, `expenseDate` as a Cairo calendar date (`YYYY-MM-DD`), `method`
 (`PaymentMethod`), nullable `payee` and `notes`, `recordedBy`, `isDeleted`
-(default `false`), and timestamps. Dates cannot be in the future.
+(default `false`), and timestamps. Dates cannot be in the future. `expenseDate`
+contains no time of payment. `createdAt`/`updatedAt` represent record activity
+and must not be combined with an expense date to fabricate a payment timestamp.
 `DELETE /api/v1/operating-expenses/:id` sets `isDeleted: true`, excludes the
 row from the active ledger and totals, and writes `operating_expense_deleted`
 to the audit log. No expense is hard deleted. No `migrate:expenses` script exists in this checkout; existing records are not rewritten automatically. Edits and category mutations write per-field old/new
@@ -462,8 +464,15 @@ collection at all — append-only.
 Customer and supplier create requests may omit `phone` or send `null`/blank.
 Missing phones are stored and returned as `null`. Updates and merge overrides
 preserve the phone when omitted; `null` or blank clears it. Supplied numbers
-retain normalization and uniqueness among non-deleted records. Fresh databases
-use the partial customer index above. Existing indexes are repaired only by the explicit check/repair command in [PHONE-VALIDATION.md](PHONE-VALIDATION.md); application startup does not migrate them.
+accept Egyptian mobiles only: local 11-digit numbers starting with 010/011/012/015
+or equivalent `+20` input. New/changed values normalize to English local digits;
+landlines and `0020` input are rejected. Unchanged legacy values are preserved;
+duplicate lookups include legacy international spellings. Supplied values remain
+unique among non-deleted records. Fresh databases
+use the partial customer index above. Application startup does not replace old
+indexes. The package-listed phone-index maintenance commands currently reference
+an absent script; they cannot be used in this checkout. See the
+[README maintenance note](../README.md#seed-data-development).
 
 Item create/update bodies accept `dimensionDefaults` with independent arrays for
 thickness, width, and length in meters. Omitted axes become empty arrays; an

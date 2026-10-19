@@ -26,9 +26,7 @@
     "seed:inventory": "ts-node -r tsconfig-paths/register src/scripts/seed-inventory.ts",
     "seed:expenses": "ts-node -r tsconfig-paths/register src/scripts/seed-expense-categories.ts",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "test:architecture": "node scripts/architecture/check.test.mjs",
-    "check:phone-indexes": "node --env-file=.env -r ts-node/register src/scripts/repair-party-phone-indexes.ts",
-    "repair:phone-indexes": "node --env-file=.env -r ts-node/register src/scripts/repair-party-phone-indexes.ts --apply"
+    "test:architecture": "node scripts/architecture/check.test.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

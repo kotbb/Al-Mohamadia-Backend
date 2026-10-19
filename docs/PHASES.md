@@ -1,13 +1,14 @@
 # Implementation Phases
 
-> This file is duplicated identically in `Al-Mohamadia-Backend/docs/` and
-> `Al-Mohamadia-Frontend/docs/` so each project has full system context
-> without needing to open the other repo. Keep both copies in sync.
+> Both repositories keep this system plan for local context. Repository-specific
+> implementation notes may differ; keep shared API contracts, feature status
+> and planned work aligned between the two copies.
 
 This project is built as a series of **vertical slices**: each phase
 delivers a complete, end-to-end feature (DB schema → NestJS module → Next.js
-pages), validated by actually driving the real frontend against the real
-backend, before the next phase starts. Do not build "the whole backend"
+pages), validated by automated backend/frontend checks and user-run manual
+frontend verification. Browser access is not part of agent verification unless
+explicitly requested. Do not build "the whole backend"
 then "the whole frontend" — and do not silently expand a phase's scope.
 
 Update this file's checkboxes/status as phases complete (in both copies),
@@ -85,8 +86,8 @@ and see it recorded in that item's price history.
 
 | Resource | Endpoints |
 |----------|-----------|
-| Categories | `POST/GET/PATCH/DELETE /categories`, `GET /categories/:id` |
-| Items | `POST/GET/PATCH/DELETE /items`, `GET /items?categoryId&isActive`, `PATCH /items/:id/pricing`, `GET /items/:id/price-history` |
+| Categories | `POST/GET /categories`, `GET/PATCH/DELETE /categories/:id` |
+| Items | `POST/GET /items`, `GET/PATCH/DELETE /items/:id`, `POST /items/:id/dimension-defaults`, `PATCH /items/:id/pricing`, `GET /items/:id/price-history` |
 
 Modules: `src/modules/categories`, `items`.
 
@@ -146,7 +147,7 @@ Modules: `src/modules/customers`, `suppliers`.
 - [x] Dev seed: `npm run seed:invoices`
 - [x] Invoice editing (`PATCH /sales-invoices/:id`): transactional stock revert & reapply, customer balance adjustment, in-place payment update, audit `invoice_updated`
 - [x] Client-side A4 PDF generation + public tokenized JSON receipt (`GET /public/sales-invoices/:token`) + WhatsApp share payload (`GET .../share`)
-- [x] Authenticated self-contained receipt (`GET /sales-invoices/:id/receipt`) and same-customer neighbors (`GET /sales-invoices/:id/neighbors`); existing public links remain valid
+- [x] Authenticated self-contained receipt (`GET /sales-invoices/:id/receipt`) and numeric/same-customer neighbors (`GET /sales-invoices/:id/neighbors`); existing public links remain valid
 
 **Frontend** — *Done*
 
@@ -279,7 +280,7 @@ Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 - [x] Transactional stock adjustment updating `Item.stockQuantity` and writing `AuditLog` (`stock_adjusted`, `refCollection: 'StockAdjustment'`)
 - [x] Stock list endpoint (`GET /inventory/stock`) with computed low/out-of/negative stock flags, category/search filters, pagination, and KPI summary count badges
 - [x] Inventory valuation endpoint (`GET /inventory/valuation`) with total value at cost, at selling price, potential profit, and category breakdowns
-- [x] Adjustment history endpoints (`GET /inventory/adjustments`, `GET /inventory/adjustments/:id`)
+- [x] Adjustment history reads `stock_adjusted` entries through `GET /audit-logs`; there are no GET inventory-adjustment endpoints
 - [x] Unit test suite covering stock adjustments, listing flags, filters, and valuations
 
 **Frontend** — *Done*
@@ -308,7 +309,8 @@ low-stock warnings reflect real thresholds.
 | Stock Adjustments | `POST /inventory/adjustments` (history is `stock_adjusted` on the audit log) |
 
 List query params (Stock): `categoryId`, `stockStatus`, `q`, `page`, `limit`.
-List query params (Adjustments): `itemId`, `period`, `date`, `page`, `limit`.
+Adjustment history uses audit filters: `action=stock_adjusted`, `entityType=Item`,
+`entityId` (optional item), inclusive Cairo `from`/`to`, `page`, `limit`.
 Adjust body: `{ itemId, newQuantity, reason }`.
 
 Module: `src/modules/inventory`.
@@ -339,9 +341,12 @@ invoices/payments created in earlier phases.
 |----------|-----------|
 | Dashboard | `GET /dashboard` |
 
-Query params (optional pair): `period` (`day` \| `week` \| `month` \| `year`), `date` (`YYYY-MM-DD`). Default: current Cairo month. Applies only to `salesSeries` + `topSellingItems`.
+Query params: `period` (`day` \| `week` \| `month` \| `year`) with `date`
+(`YYYY-MM-DD`), or custom inclusive Cairo `from`/`to`. Default: current Cairo
+month. The selected range applies to `periodFinancials`, `salesSeries` and
+`topSellingItems`; today and live debt KPIs remain independent.
 
-Response: `{ today: { sales, estimatedProfit, invoiceCount, collected }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`.
+Response: `{ today: { sales, estimatedProfit, operatingExpenses, estimatedNetProfit, invoiceCount, collected }, periodFinancials: { sales, estimatedGrossProfit, operatingExpenses, estimatedNetProfit }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`. `today.estimatedProfit` retains its existing gross-profit meaning. Custom ranges return `period.period = "custom"`.
 
 Module: `src/modules/dashboard`.
 
@@ -400,10 +405,10 @@ Module: `src/modules/audit` (backend).
 - Loading / error / empty states everywhere
 - API hardening: rate limiting, input validation edge cases, consistent
   error responses
-- Zero backend cold-start footprint: Invoice printing and PDF downloads run
+- No backend receipt renderer: Invoice printing and PDF downloads run
   entirely client-side on the frontend via HTML5 print and `html2pdf.js`,
-  eliminating heavy Chromium and Puppeteer headless browser dependencies from
-  the backend and avoiding Vercel serverless execution timeout limits.
+  without an API rendering job. The current API Dockerfile still contains legacy
+  Chromium installation; container cleanup/deployment validation is separate.
 - Deployment configuration must be verified for the selected runtime. The checkout includes Compose; no backend `vercel.json` is present. No deployment is performed by documentation or build checks.
 
 ---
@@ -422,7 +427,7 @@ Module: `src/modules/audit` (backend).
 | 7 — Inventory Management | Done | Done |
 | 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Done | Done |
-| 10 — Polish & Hardening | Done | Done |
+| 10 — Polish & Hardening | Implemented; runtime validation pending | Implemented; manual visual checks pending |
 
 ### Compact inventory and invoice dimension additions
 
@@ -454,7 +459,7 @@ Not implemented: configurable repeat intervals, first/optional end dates, due/ov
 
 ### Validation and invoice navigation refinement
 
-Implemented optional Egyptian mobile validation, preserved unchanged legacy phones, targeted phone-index check/repair, trimmed required-text/null guards, consistent opening/item monetary precision, and finite positive cubic write guards across the two repositories. Invoice navigation uses a mode selector and two arrows; export settings guidance is excluded from receipt outputs. Existing records are not rewritten. Manual English/Arabic/mobile checks remain user-run.
+Implemented optional Egyptian mobile validation, preserved unchanged legacy phones, partial phone indexes (the package-listed check/repair script is currently absent), trimmed required-text/null guards, consistent opening/item monetary precision, and finite positive cubic write guards across the two repositories. Invoice navigation uses a mode selector and labeled Previous/Next arrows; Arabic PDF guidance is also shown on public receipts and excluded from printed/downloaded output. Existing records are not rewritten. Manual English/Arabic/mobile checks remain user-run.
 
 ### DTO organization
 
@@ -462,3 +467,15 @@ All feature DTO directories separate incoming body/query contracts into
 `dto/request/` and returned contracts into `dto/response/`. Nested input DTOs
 stay with requests. Controllers, services, tests and cross-feature imports use
 the new paths. This refactor preserves validation, API payloads and persistence.
+
+
+### Current locale, phone and Finance controls
+
+- Arabic/RTL is the unprefixed default with locale detection disabled; explicit
+  English routes remain LTR. Theme and language switches live in the user menu.
+- Optional Egyptian mobiles accept local/+20 formats and use English digits.
+  The ten-digit international portion keeps generic `1XX XXX XXXX` guidance.
+  Errors appear on invalid submit attempts, not while typing or on blur.
+- Finance Custom From/To fields stay beside the preset selector on desktop,
+  with reserved width, and stack on smaller screens. Expense dates remain
+  date-only; no payment time has been added. Record creation is a separate timestamp.

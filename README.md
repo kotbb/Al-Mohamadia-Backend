@@ -29,6 +29,9 @@ src/
   scripts/                 # development seed scripts
 ```
 
+Each feature separates incoming DTOs into `dto/request/` and returned contracts
+into `dto/response/`; internal types and pure helpers remain in `types/` and `utils/`.
+
 ## Features
 
 ### Authentication (`/api/v1/auth`)
@@ -40,7 +43,7 @@ src/
 
 ### Users (`/api/v1/users`)
 
-- List users and get the current profile
+- List users and get the current details of them
 - Create, update, and soft-delete users (**super admin only**)
 - Update can change name, username, password, active flag, and role (`admin` or `super_admin`)
 - A super admin cannot change their own role
@@ -282,6 +285,8 @@ Item list query params: `categoryId`, `isActive`.
 | `DELETE` | `/api/v1/customers/:id`   | Both | Soft-delete customer      |
 
 Customer list query params: `q`, `hasDebt`, `isActive`, `page`, `limit`.
+Supplied phones require 11 local digits starting with 010/011/012/015, or the
+equivalent `+20` format. New/changed values normalize to English local digits;
 
 ### Suppliers
 
@@ -386,6 +391,8 @@ Query params: `period`, `date`, or a custom `from`/`to` pair.
 | `PATCH`  | `/api/v1/operating-expenses/categories/:id` | Both | Rename or activate/deactivate              |
 
 Expense query params: `from`, `to`, `categoryId`, `method`, `search`, `page`, `limit`.
+`expenseDate` is a Cairo calendar date (`YYYY-MM-DD`), not a payment timestamp;
+`createdAt`/`updatedAt` separately record system activity.
 
 ### Audit log
 
@@ -446,16 +453,3 @@ npm run seed:expenses     # starter expense categories; preserves existing edits
 
 Use mock catalog/party/invoice/purchase/inventory seeds only against an intended
 development database. No seeds or migrations run automatically at application startup.
-Existing databases may retain an older phone index. Use `npm run check:phone-indexes`
-and the explicit `npm run repair:phone-indexes` maintenance command when needed;
-see [phone validation and index repair](docs/PHONE-VALIDATION.md). Neither command rewrites records.
-
-## Contributor documentation
-
-- [AGENTS.md](AGENTS.md): complete repository instructions and architecture rules
-- [Overview](docs/OVERVIEW.md): setup, capabilities, and runtime notes
-- [Database](docs/DATABASE.md): schemas, indexes, API invariants, and legacy behavior
-- [Phases](docs/PHASES.md): implemented work, pending manual checks, and planned recurrence
-
-`npm run build` runs architecture validation before compilation. For read-only
-linting use `npx eslint "{src,test}/**/*.ts"`; `npm run lint` auto-fixes files.

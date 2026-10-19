@@ -21,7 +21,8 @@ non-transport contracts remain in the feature's `types/` directory.
 
 > **Note:** Build is phased (vertical slices). See
 > [PHASES.md](./PHASES.md) for what exists vs planned. **Phases 0–10 are
-> complete** on both apps.
+> implemented** on both apps; manual language/mobile checks and deployment validation
+> remain separate.
 
 ---
 
@@ -39,7 +40,7 @@ non-transport contracts remain in the feature's `types/` directory.
 | 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, manual stock adjustments recorded on the audit log (`GET /inventory/stock`, `GET /inventory/valuation`, `POST /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
 | 8 | Done | `dashboard` — today KPIs, debt KPI, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
 | 9 | Done | `audit` — append-only log list and actor filter — see [PHASES.md](./PHASES.md#phase-9--audit-log-ui) |
-| 10 | Done | Rate limits, money validation, error envelope, preview deploy — see [PHASES.md](./PHASES.md#phase-10--polish--hardening) |
+| 10 | Done | Rate limits, money validation, error envelope; manual/deployment validation remains separate — see [PHASES.md](./PHASES.md#phase-10--polish--hardening) |
 
 ## What this system does
 
@@ -121,8 +122,9 @@ is authoritative.
 - Price/cost changes append `ItemPriceHistory` (never silent overwrite).
 - Manual stock corrections update `Item.stockQuantity` and write
   `stock_adjusted` on `AuditLog` with the quantity and the reason.
-- Dimensions (`thickness` × `width` × `length`, m) are required on sales
-  lines only when the item `pricingMode` is `per_cubic_meter`.
+- Dimensions (`thickness` × `width` × `length`, m) are required on sales and
+  purchase lines when the item `pricingMode` is `per_cubic_meter`; piece dimensions
+  are optional and descriptive.
 
 ### Audit log
 
@@ -171,7 +173,7 @@ See [`.env.example`](../.env.example) for the template.
 | Variable                 | Purpose                                |
 | ------------------------ | -------------------------------------- |
 | `MONGO_URI`              | MongoDB connection string              |
-| `NODE_ENV`               | `development`                          | `production` |
+| `NODE_ENV`               | `development` or `production` |
 | `PORT`                   | HTTP port (default `3000`)             |
 | `JWT_ACCESS_SECRET`      | Access token signing secret (Phase 1)  |
 | `JWT_REFRESH_SECRET`     | Refresh token signing secret (Phase 1) |
@@ -205,7 +207,11 @@ If the frontend also wants port `3000`, run Next on another port (e.g.
 
 ### Runtime and deployment
 
-The checkout includes Dockerfiles and Compose. It does not currently include a backend `vercel.json`; do not rely on historical Vercel memory/runtime settings. Select and validate deployment settings separately for the intended host.
+The checkout includes Dockerfiles and Compose, but no backend `vercel.json`.
+The current API Dockerfile still installs Chromium and Compose sets legacy
+Puppeteer variables, although no API receipt renderer uses them. Do not interpret
+that container configuration as server-side PDF support or a minimal image.
+Validate deployment settings separately for the intended host.
 
 Set `MONGO_URI` to a transaction-capable replica set/Atlas database, JWT secrets, `CORS_ORIGIN` to the frontend origin and `FRONTEND_URL` for public receipt links. Frontend `NEXT_PUBLIC_API_URL` includes `/api/v1` and is embedded at build time. Mock seeds are for intended development data, not production initialization.
 
@@ -233,8 +239,8 @@ npm run test:e2e      # e2e
 npm run test:cov      # coverage
 ```
 
-Prioritize the money-critical paths (invoice create/cancel, payments, stock)
-once those phases land.
+Prioritize existing money-critical regressions (invoice create/edit/cancel, payments,
+stock, dimensions and legacy pricing) when changing those flows.
 
 ---
 
@@ -275,11 +281,12 @@ all business logic or ownership decisions correct.
 
 Operating expenses are paid ledger records, not obligations. Expense CRUD/category endpoints are under `/api/v1/operating-expenses`; mutations and audits share Mongo transactions. Summaries cover all active matching records. Dashboard estimated net profit subtracts paid expenses by expenseDate.
 
-Authenticated receipt and same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
+Authenticated receipt and numeric/same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
 
 Recurring expenses are planned only. See [Recurring expense design](./PHASES.md#planned-recurring-operating-expenses) for agreed behavior and proposed collections; no recurrence schema, index, endpoint or scheduler has been installed.
 
 
 ### Mobile validation and invoice presentation
 
-Customer/supplier phones accept optional Egyptian mobiles with canonical English local digits; unchanged legacy values remain intact. Text/null/money and invoice calculation guards are tightened. See [phone validation and targeted index maintenance](PHONE-VALIDATION.md).
+Customer/supplier phones accept optional Egyptian mobiles with canonical English local digits; unchanged legacy values remain intact. Text/null/money and invoice calculation guards are tightened. See [the optional-phone contract](DATABASE.md#optional-phones-and-dimension-contract)
+and [current seed/maintenance limitations](../README.md#seed-data-development).
