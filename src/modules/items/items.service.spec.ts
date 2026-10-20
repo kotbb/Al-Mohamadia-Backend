@@ -130,6 +130,32 @@ describe('ItemsService', () => {
   });
 
   describe('create', () => {
+    it('creates a free-amount item with zero valued physical and pricing fields', async () => {
+      await service.create({ code: 'F001', name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT }, actor);
+      expect(itemModel.create).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            pricingMode: PricingMode.FREE_AMOUNT,
+            isWood: false,
+            unitPrice: 0,
+            cost: 0,
+            stockQuantity: 0,
+            reorderThreshold: 0,
+          }),
+        ],
+        { session },
+      );
+    });
+
+    it('rejects physical and pricing fields on free-amount items', async () => {
+      await expect(
+        service.create(
+          { code: 'F001', name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT, stockQuantity: 2 },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(itemModel.create).not.toHaveBeenCalled();
+    });
     it('creates an item and writes audit log', async () => {
       const result = await service.create(
         {
@@ -192,7 +218,29 @@ describe('ItemsService', () => {
     });
   });
 
+  describe('update', () => {
+    it('rejects changing pricing mode after item creation', async () => {
+      await expect(service.update(validId, { pricingMode: PricingMode.FREE_AMOUNT }, actor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockItem.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects physical fields on a free-amount item', async () => {
+      itemModel.findOne.mockReturnValue({
+        populate: () => ({ exec: () => Promise.resolve({ ...mockItem, pricingMode: PricingMode.FREE_AMOUNT }) }),
+      });
+      await expect(service.update(validId, { reorderThreshold: 2 }, actor)).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('updatePricing', () => {
+    it('rejects pricing changes for a free-amount item', async () => {
+      itemModel.findOne.mockReturnValue({
+        exec: () => Promise.resolve({ ...mockItem, pricingMode: PricingMode.FREE_AMOUNT }),
+      });
+      await expect(service.updatePricing(validId, { unitPrice: 100 }, actor)).rejects.toThrow(BadRequestException);
+    });
     it('throws BadRequestException when no fields provided', async () => {
       await expect(service.updatePricing(validId, {}, actor)).rejects.toThrow(BadRequestException);
     });

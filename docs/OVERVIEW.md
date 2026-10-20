@@ -47,7 +47,7 @@ non-transport contracts remain in the feature's `types/` directory.
 | Domain              | Business purpose                                                             |
 | ------------------- | ---------------------------------------------------------------------------- |
 | **Auth & users**    | Login, refresh, logout; `super_admin` manages admins; `admin` runs the shop  |
-| **Items & pricing** | Categories, items, per-piece / per-m³ pricing, cost, price history, meter dimension defaults *(Phase 2 — live)* |
+| **Items & pricing** | Categories, items, per-piece / per-m³ / `free_amount` pricing, cost and price history for stocked items, meter dimension defaults *(Phase 2 — live)* |
 | **Sales invoicing** | Cash or customer sales, line items, discount, paid/remaining, update, cancel, client-side PNG A5 / PDF A4 export + WhatsApp sharing *(Phase 4 — live)* |
 | **Customer payments** | Payments on new sales + standalone debt payments against customer balance *(Phase 5 — live)* |
 | **Customers**       | CRUD, running مديونية, search, merge duplicates *(Phase 3 — live)*           |
@@ -55,8 +55,7 @@ non-transport contracts remain in the feature's `types/` directory.
 | **Purchases**       | Restock invoices; increase stock and supplier amount owed *(Phase 6 — live)* |
 | **Supplier payments** | Payments on purchases + standalone debt payments to suppliers *(Phase 6 — live)* |
 | **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory valuation at cost & selling *(Phase 7 — live)* |
-| **Dashboard**       | Today's sales / gross profit / estimated net profit / collected / invoice count, debt totals, selected-period sales and profit, period chart + top items *(Phase 8 — live)* |
-| **Operating expenses** | Separate paid expense ledger and category management; audited edits and terminal soft deletes under `/api/v1/operating-expenses`, with categories nested under `/categories`; run `npm run seed:expenses` for starter categories |
+| **Dashboard**       | Today's sales / gross profit / collected / invoice count, debt totals, selected-period sales and gross profit, period chart + top items *(Phase 8 — live)* |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
 
 ---
@@ -125,6 +124,8 @@ is authoritative.
 - Dimensions (`thickness` × `width` × `length`, m) are required on sales and
   purchase lines when the item `pricingMode` is `per_cubic_meter`; piece dimensions
   are optional and descriptive.
+- `free_amount` items are sales-only charges. Each invoice line takes a positive
+  EGP amount and optional note; it has no stock movement, dimensions, or item cost.
 
 ### Audit log
 
@@ -185,7 +186,7 @@ See [`.env.example`](../.env.example) for the template.
 
 ### Seed scripts (development)
 
-Available commands: `seed:catalog`, `seed:parties`, `seed:invoices`, `seed:purchases`, `seed:inventory`, and `seed:expenses`. Catalog/party/transaction scripts contain mock data; check the target database before running them. Invoice, purchase and inventory seeds require an existing user. `seed:expenses` inserts missing starter categories and preserves renamed/inactive categories.
+Available seed commands: `seed:catalog`, `seed:parties`, `seed:invoices`, `seed:purchases`, and `seed:inventory`. These contain mock data; check the target database before running them. Invoice, purchase and inventory seeds require an existing user.
 
 There is no `seed:super-admin` script in this checkout. Initial account provisioning must be arranged separately; no public registration exists. Do not assume every seed is non-mutating when repeated.
 
@@ -277,13 +278,13 @@ dependency or change runtime behavior. Diagnostics identify file, line, rule,
 and destination. These focused checks complement code review; they do not prove
 all business logic or ownership decisions correct.
 
-## Implemented expense and export contracts
+## Free-amount sales and export contracts
 
-Operating expenses are paid ledger records, not obligations. Expense CRUD/category endpoints are under `/api/v1/operating-expenses`; mutations and audits share Mongo transactions. Summaries cover all active matching records. Dashboard estimated net profit subtracts paid expenses by expenseDate.
+`free_amount` is a third item pricing mode (Arabic: مبلغ حر). It is selected at item creation and cannot be changed later. Sales invoice lines enter one amount, with canonical stored `quantity: 1` and `piecePrice: amount`; the server recomputes totals, snapshots zero cost, and makes no stock adjustment. Purchases and inventory reject these items. Mixed receipts show only the item, optional note, and amount for these lines; physical quantity and cubic totals exclude them.
 
 Authenticated receipt and numeric/same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
 
-Recurring expenses are planned only. See [Recurring expense design](./PHASES.md#planned-recurring-operating-expenses) for agreed behavior and proposed collections; no recurrence schema, index, endpoint or scheduler has been installed.
+The operating-expense feature and API have been retired. Expense and category data is removed only by explicitly running `npm run cleanup:expenses` to inspect counts, then `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA` against the intended database. Historical expense audit entries are retained.
 
 
 ### Mobile validation and invoice presentation

@@ -1,6 +1,6 @@
 # Al-Mohamadia
 
-NestJS backend API for a wood store (sales, inventory, customer debt, purchases, operating expenses, and audit) with MongoDB. A **super admin** creates admin accounts (users cannot self-register). Admins and the super admin then sign in, sell and restock wood, track customer balances and supplier debt, record paid expenses, adjust stock, and review an append-only audit trail.
+NestJS backend API for a wood store (sales, inventory, customer debt, purchases, and audit) with MongoDB. A **super admin** creates admin accounts (users cannot self-register). Admins and the super admin then sign in, sell and restock wood, track customer balances and supplier debt, adjust stock, and review an append-only audit trail.
 
 The [Al-Mohamadia frontend](https://github.com/kotbb/Al-Mohamadia-Frontend) talks only to this API under `/api/v1`.
 
@@ -20,7 +20,6 @@ src/
     payments/
     purchases/
     supplier-payments/
-    operating-expenses/    # paid expense ledger + expense categories
     inventory/             # stock, valuation, manual adjustments
     dashboard/
     audit/                 # append-only audit log
@@ -56,7 +55,7 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 ### Items (`/api/v1/items`)
 
 - Create, list, get, update, and soft-delete items
-- Piece pricing or per-cubic-meter pricing (all dimensions in meters)
+- Piece, per-cubic-meter, or `free_amount` (مبلغ حر) pricing; pricing mode is fixed at item creation
 - Optional descriptive piece dimensions; cubic pricing requires thickness, width, and length
 - Multiple positive dimension defaults per axis, deduplicated and sorted numerically
 - Append defaults through `POST /items/:id/dimension-defaults` with transactional auditing and concurrent-write protection
@@ -86,7 +85,8 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 - Public invoice receipt by share token (no login)
 - Authenticated receipt JSON for frontend PNG A5 / PDF A4 export, with numeric and same-customer previous/next navigation
 - Export rendering runs in the frontend; the API does not generate PDF or PNG files
-- Server-controlled pricing mode snapshots preserve piece/cubic behavior during updates and reversals; legacy lines retain fallback support
+- Server-controlled pricing mode snapshots preserve piece/cubic/free-amount behavior during updates and reversals; legacy lines retain fallback support
+- Free-amount lines take a positive EGP amount and optional note, with no stock movement or cost; purchases reject these items
 - Public/private receipt lines include resolved `pricingModeSnapshot`; clients display cubic volume × saved rate as price per piece without changing stored rates/totals
 
 ### Payments (`/api/v1/payments`)
@@ -115,19 +115,9 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 
 ### Dashboard (`/api/v1/dashboard`)
 
-- Today's sales, estimated gross profit, paid expenses, estimated net profit, collections, and invoice count
+- Today's sales, estimated gross profit, collections, and invoice count
 - Customer debt totals and selected-period financial summaries, chart series, and top sellers
 - Period filter: `day`, `week`, `month`, or `year`; alternatively an inclusive Cairo `from`/`to` range
-
-### Operating expenses (`/api/v1/operating-expenses`)
-
-- Create, list, view, edit, and soft-delete paid EGP expenses
-- Separate expense categories with activation/deactivation and editable names
-- Filter by inclusive Cairo expense dates, category, method, and payee/notes search
-- Paginated rows with totals over all active matching records, independent of page
-- Expense and category mutations are audited in Mongo transactions; future payment dates are rejected
-- Paid expenses reduce estimated net profit on their recorded expense dates
-- Recurring schedules, due/overdue obligations, and reminder emails are planned, not implemented
 
 ### Audit log (`/api/v1/audit-logs`)
 
@@ -377,23 +367,6 @@ A manual adjustment updates `Item.stockQuantity` and writes a `stock_adjusted` a
 
 Query params: `period`, `date`, or a custom `from`/`to` pair.
 
-### Operating expenses
-
-| Method   | Path                                        | Auth | Description                                |
-| -------- | ------------------------------------------- | ---- | ------------------------------------------ |
-| `GET`    | `/api/v1/operating-expenses`                | Both | Paginated paid ledger and filtered summary |
-| `POST`   | `/api/v1/operating-expenses`                | Both | Record a paid expense                      |
-| `GET`    | `/api/v1/operating-expenses/:id`            | Both | Expense details                            |
-| `PATCH`  | `/api/v1/operating-expenses/:id`            | Both | Edit a non-deleted expense                 |
-| `DELETE` | `/api/v1/operating-expenses/:id`            | Both | Terminal soft delete                       |
-| `GET`    | `/api/v1/operating-expenses/categories`     | Both | List expense categories                    |
-| `POST`   | `/api/v1/operating-expenses/categories`     | Both | Create a category                          |
-| `PATCH`  | `/api/v1/operating-expenses/categories/:id` | Both | Rename or activate/deactivate              |
-
-Expense query params: `from`, `to`, `categoryId`, `method`, `search`, `page`, `limit`.
-`expenseDate` is a Cairo calendar date (`YYYY-MM-DD`), not a payment timestamp;
-`createdAt`/`updatedAt` separately record system activity.
-
 ### Audit log
 
 | Method | Path                        | Auth | Description        |
@@ -448,8 +421,12 @@ npm run seed:parties      # sample customers and suppliers
 npm run seed:invoices     # sample cash and customer sales invoices
 npm run seed:purchases    # sample purchase invoices
 npm run seed:inventory    # sample stock adjustments
-npm run seed:expenses     # starter expense categories; preserves existing edits
 ```
 
 Use mock catalog/party/invoice/purchase/inventory seeds only against an intended
 development database. No seeds or migrations run automatically at application startup.
+
+The retired operating-expense and category collections require explicit cleanup.
+`npm run cleanup:expenses` reports counts without changing data. Against the
+intended database, `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA`
+deletes those collections while retaining expense-related audit history.

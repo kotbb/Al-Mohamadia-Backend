@@ -4,13 +4,19 @@ import { metersToCubicMeters } from './cubic-meter.util';
 /** Write-time checks only: legacy read/reversal calculations remain unchanged. */
 export function validateLineValues(params: {
   isCubic: boolean;
+  isFreeAmount?: boolean;
   thickness: number | null;
   width: number | null;
   length: number | null;
   stockDelta: number;
   lineTotal: number;
 }): void {
-  if (!Number.isFinite(params.lineTotal) || !Number.isFinite(params.stockDelta) || params.stockDelta <= 0) {
+  if (
+    !Number.isFinite(params.lineTotal) ||
+    (params.isFreeAmount && params.lineTotal <= 0) ||
+    !Number.isFinite(params.stockDelta) ||
+    (params.isFreeAmount ? params.stockDelta !== 0 : params.stockDelta <= 0)
+  ) {
     throw new BadRequestException('Line total and stock quantity must be finite, with positive stock quantity');
   }
   if (params.isCubic) {

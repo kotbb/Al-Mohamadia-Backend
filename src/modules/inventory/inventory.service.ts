@@ -12,6 +12,7 @@ import { InventoryValuationResponseDto } from './dto/response/inventory-valuatio
 import { ListStockQueryDto } from './dto/request/list-stock-query.dto';
 import { StockItemResponseDto, StockListResponseDto } from './dto/response/stock-list-response.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
+import { PricingMode } from '../../shared/enums/pricing-mode.enum';
 
 @Injectable()
 export class InventoryService {
@@ -30,6 +31,9 @@ export class InventoryService {
     if (!item) {
       throw new NotFoundException('Item not found');
     }
+    if (item.pricingMode === PricingMode.FREE_AMOUNT) {
+      throw new BadRequestException('Free-amount items do not have stock');
+    }
 
     const newQuantity = roundMoney(dto.newQuantity);
     if (newQuantity === item.stockQuantity) {
@@ -44,6 +48,9 @@ export class InventoryService {
 
       if (!lockedItem) {
         throw new NotFoundException('Item not found');
+      }
+      if (lockedItem.pricingMode === PricingMode.FREE_AMOUNT) {
+        throw new BadRequestException('Free-amount items do not have stock');
       }
 
       if (newQuantity === lockedItem.stockQuantity) {
@@ -90,7 +97,7 @@ export class InventoryService {
 
   // 2. Stock Health Overview List
   public async getStockList(query: ListStockQueryDto): Promise<StockListResponseDto> {
-    const baseFilter: Record<string, unknown> = { isDeleted: false };
+    const baseFilter: Record<string, unknown> = { isDeleted: false, pricingMode: { $ne: PricingMode.FREE_AMOUNT } };
 
     if (query.categoryId) {
       baseFilter.categoryId = new Types.ObjectId(query.categoryId);
@@ -243,7 +250,7 @@ export class InventoryService {
 
   // 3. Inventory Valuation
   public async getValuation(): Promise<InventoryValuationResponseDto> {
-    const filter = { isDeleted: false, isActive: true };
+    const filter = { isDeleted: false, isActive: true, pricingMode: { $ne: PricingMode.FREE_AMOUNT } };
 
     const [totalAgg, categoryAgg] = await Promise.all([
       this.itemModel.aggregate<{

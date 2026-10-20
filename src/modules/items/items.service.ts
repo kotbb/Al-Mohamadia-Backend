@@ -17,6 +17,7 @@ import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { normalizeDimensionDefaults } from './utils/dimension-defaults.util';
 import { AddDimensionDefaultDto } from './dto/request/add-dimension-default.dto';
 import { ItemDimensionDefaultsResponseDto } from './dto/response/item-dimension-defaults-response.dto';
+import { PricingMode } from '../../shared/enums/pricing-mode.enum';
 
 @Injectable()
 export class ItemsService {
@@ -31,6 +32,17 @@ export class ItemsService {
 
   // Create Item
   public async create(dto: CreateItemDto, user: AuthUser): Promise<ItemResponseDto> {
+    if (
+      dto.pricingMode === PricingMode.FREE_AMOUNT &&
+      (dto.isWood !== undefined ||
+        dto.dimensionDefaults !== undefined ||
+        dto.unitPrice !== undefined ||
+        dto.cost !== undefined ||
+        dto.stockQuantity !== undefined ||
+        dto.reorderThreshold !== undefined)
+    ) {
+      throw new BadRequestException('Free-amount items cannot have physical or pricing fields');
+    }
     const category = await this.categoriesService.findActiveById(dto.categoryId);
     if (!category) {
       throw new NotFoundException('Category not found');
@@ -186,8 +198,14 @@ export class ItemsService {
     }
 
     if (dto.pricingMode !== undefined && dto.pricingMode !== item.pricingMode) {
-      changes.pricingMode = { old: item.pricingMode, new: dto.pricingMode };
-      item.pricingMode = dto.pricingMode;
+      throw new BadRequestException('Item pricing mode cannot be changed after creation');
+    }
+
+    if (
+      item.pricingMode === PricingMode.FREE_AMOUNT &&
+      (dto.isWood !== undefined || dto.dimensionDefaults !== undefined || dto.reorderThreshold !== undefined)
+    ) {
+      throw new BadRequestException('Free-amount items cannot have physical fields');
     }
 
     if (dto.dimensionDefaults !== undefined) {
@@ -305,6 +323,10 @@ export class ItemsService {
     const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).exec();
     if (!item) {
       throw new NotFoundException('Item not found');
+    }
+
+    if (item.pricingMode === PricingMode.FREE_AMOUNT) {
+      throw new BadRequestException('Free-amount item pricing is entered on each sales invoice');
     }
 
     const pendingChanges: {
@@ -432,6 +454,9 @@ export class ItemsService {
     return this.connection.transaction(async (session) => {
       const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).session(session).exec();
       if (!item) throw new NotFoundException('Item not found');
+      if (item.pricingMode === PricingMode.FREE_AMOUNT) {
+        throw new BadRequestException('Free-amount items cannot have dimensions');
+      }
       const oldDefaults = normalizeDimensionDefaults(item.dimensionDefaults);
       const nextDefaults = normalizeDimensionDefaults({
         ...oldDefaults,

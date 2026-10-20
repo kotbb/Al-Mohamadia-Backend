@@ -12,12 +12,13 @@ export function metersToCubicMeters(thicknessM: number, widthM: number, lengthM:
  * per_cubic_meter: quantity × volume (m³); per_piece: quantity (pieces).
  */
 export function stockDeltaForLine(params: {
-  pricingMode: 'per_piece' | 'per_cubic_meter';
+  pricingMode: 'per_piece' | 'per_cubic_meter' | 'free_amount';
   quantity: number;
   thicknessM?: number | null;
   widthM?: number | null;
   lengthM?: number | null;
 }): number {
+  if (params.pricingMode === 'free_amount') return 0;
   if (params.pricingMode === 'per_piece') {
     return params.quantity;
   }
@@ -34,13 +35,14 @@ export function stockDeltaForLine(params: {
  * per_cubic_meter: quantity × volume × piecePrice; per_piece: quantity × piecePrice.
  */
 export function lineTotalForPricing(params: {
-  pricingMode: 'per_piece' | 'per_cubic_meter';
+  pricingMode: 'per_piece' | 'per_cubic_meter' | 'free_amount';
   quantity: number;
   piecePrice: number;
   thicknessM?: number | null;
   widthM?: number | null;
   lengthM?: number | null;
 }): number {
+  if (params.pricingMode === 'free_amount') return params.piecePrice;
   if (params.pricingMode === 'per_piece') {
     return params.quantity * params.piecePrice;
   }

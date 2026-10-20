@@ -7,7 +7,6 @@ import { formatCairoDate } from '../../shared/utils/period/cairo-period.util';
 import { Customer } from '../customers/schemas/customer.schema';
 import { Item } from '../items/schemas/item.schema';
 import { Payment } from '../payments/schemas/payment.schema';
-import { OperatingExpense } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardService } from './dashboard.service';
 import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
@@ -26,7 +25,6 @@ describe('DashboardService', () => {
   let paymentModel: {
     aggregate: jest.Mock;
   };
-  let operatingExpenseModel: { aggregate: jest.Mock };
   let customerModel: {
     aggregate: jest.Mock;
   };
@@ -47,7 +45,6 @@ describe('DashboardService', () => {
     paymentModel = {
       aggregate: jest.fn(),
     };
-    operatingExpenseModel = { aggregate: jest.fn().mockResolvedValue([]) };
     customerModel = {
       aggregate: jest.fn(),
     };
@@ -60,7 +57,6 @@ describe('DashboardService', () => {
         DashboardService,
         { provide: getModelToken(SalesInvoice.name), useValue: salesInvoiceModel },
         { provide: getModelToken(Payment.name), useValue: paymentModel },
-        { provide: getModelToken(OperatingExpense.name), useValue: operatingExpenseModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: getModelToken(Item.name), useValue: itemModel },
       ],
@@ -95,30 +91,25 @@ describe('DashboardService', () => {
       expect(result.today).toEqual({
         sales: 0,
         estimatedProfit: 0,
-        operatingExpenses: 0,
-        estimatedNetProfit: 0,
         invoiceCount: 0,
         collected: 0,
       });
       expect(result.debt).toEqual({ totalDebt: 0, debtorCount: 0 });
     });
 
-    it('subtracts active dated operating expenses from gross profit for today and the selected period', async () => {
+    it('returns gross-profit financials without an expense ledger', async () => {
       stubEmptyAggregates();
-      operatingExpenseModel.aggregate.mockResolvedValueOnce([{ amount: 25 }]).mockResolvedValueOnce([{ amount: 80 }]);
       const result = await service.getDashboard({
         period: SalesInvoicePeriod.MONTH,
         date: formatCairoDate(new Date()),
       });
-      expect(result.today).toMatchObject({ estimatedProfit: 0, operatingExpenses: 25, estimatedNetProfit: -25 });
+      expect(result.today).toMatchObject({ estimatedProfit: 0 });
       expect(result.periodFinancials).toEqual({
         sales: 0,
         estimatedGrossProfit: 0,
-        operatingExpenses: 80,
-        estimatedNetProfit: -80,
       });
-      const match = operatingExpenseModel.aggregate.mock.calls[0][0][0].$match;
-      expect(match).toMatchObject({ isDeleted: false, expenseDate: { $gte: formatCairoDate(new Date()) } });
+      expect(result.today).not.toHaveProperty('operatingExpenses');
+      expect(result.today).not.toHaveProperty('estimatedNetProfit');
     });
 
     it('fails if period is given without date', async () => {
@@ -279,6 +270,8 @@ describe('DashboardService', () => {
         (stage) => typeof stage === 'object' && stage !== null && '$project' in stage,
       ) as { $project: { itemId: unknown } };
       expect(topProject.$project.itemId).toEqual({ $toString: '$lines.itemId' });
+      expect(JSON.stringify(topItemsPipeline)).toContain('free_amount');
+      expect(JSON.stringify(cogsPipeline)).toContain('free_amount');
     });
 
     it('buckets period invoices into salesSeries', async () => {

@@ -130,11 +130,11 @@ when a new one is issued).
 | name | string | |
 | categoryId | ObjectId → Category | |
 | isWood | boolean | |
-| pricingMode | string enum | `per_piece` \| `per_cubic_meter` |
+| pricingMode | string enum | `per_piece` \| `per_cubic_meter` \| `free_amount`; immutable after creation |
 | dimensionDefaults | object | `{ thickness: number[], width: number[], length: number[] }`; positive finite meter values, deduplicated and numerically sorted; defaults to empty arrays |
 | unitPrice | number | current selling price |
 | cost | number | current/live cost price |
-| stockQuantity | number | pieces or m³, depending on `pricingMode` |
+| stockQuantity | number | pieces or m³ for stocked items; zero for `free_amount` |
 | reorderThreshold | number | triggers low-stock alert |
 | isActive | boolean | |
 | isDeleted | boolean | |
@@ -146,6 +146,10 @@ Manual stock corrections are `stock_adjusted` rows on `AuditLog`.
 
 **Rules:** `unitPrice`/`cost` changes must append an `ItemPriceHistory`
 entry, never a silent overwrite. `stockQuantity` may be set on create.
+For `free_amount`, item creation requires name, code, and category but no
+editable price, cost, dimensions, stock, or reorder threshold. Required numeric
+schema fields are stored as zero. The item is selectable only on sales invoices;
+purchase and inventory operations reject it. Pricing mode is immutable.
 Later manual corrections go through `POST /inventory/adjustments` and are
 stored on `AuditLog` (`stockQuantity` and `reason` in `changes`). Sales and
 purchases change stock on their own documents. `code` is unique among
@@ -189,6 +193,7 @@ unique partial on `pdfShareToken` where token is a string.
   - `per_piece`: deduct `quantity`
   - `per_cubic_meter`: deduct `quantity × volume` where
     `volume = thickness × width × length` (m → m³, 6 dp)
+  - `free_amount`: no stock movement
 - Cancelling an invoice (`status = cancelled`) reverses the stock deduction
   and reverses the `Customer.balance += remaining` that was applied at save
   time (use the invoice’s original `remaining` at save, not a replay of
@@ -219,12 +224,12 @@ unique partial on `pdfShareToken` where token is a string.
 | Field | Type | Notes |
 |---|---|---|
 | itemId | ObjectId → Item | |
-| quantity | number | must be `> 0` |
+| quantity | number | must be `> 0`; always `1` for `free_amount` |
 | width, length, thickness | number (m) \| null | optional descriptive dimensions for piece items; all required for cubic; every supplied value positive and finite |
 | pricingModeSnapshot | string enum | server-controlled pricing mode captured when line is saved; absent only on legacy lines |
-| piecePrice | number | unit price **snapshot** at time of sale (`> 0`; cashier may override live `unitPrice`) |
-| costPriceSnapshot | number | always copied from live `Item.cost` at save (not client-overridable) |
-| lineTotal | number | `per_piece`: `quantity × piecePrice`; `per_cubic_meter`: `quantity × volume × piecePrice` |
+| piecePrice | number | unit price snapshot for stocked modes; entered positive EGP amount for `free_amount` |
+| costPriceSnapshot | number | copied from live `Item.cost` for stocked modes; zero for `free_amount` |
+| lineTotal | number | `per_piece`: `quantity × piecePrice`; `per_cubic_meter`: `quantity × volume × piecePrice`; `free_amount`: entered amount, server recomputed to 2 dp |
 | note | string \| null | optional |
 
 ---
@@ -369,33 +374,14 @@ pointer back to the specific document here instead (see `AuditLog` below).
 
 ---
 
-## Operating expenses
+## Retired operating-expense data
 
-`ExpenseCategory` is separate from product categories. Run `npm run seed:expenses`
-to insert the six starter categories idempotently; API startup does not change
-category records. It has nullable starter `code` (the seeded Arabic label), nullable
-staff-controlled `name`, `isActive`, and timestamps. Seeding preserves edits
-and retains the current starter codes on rerun. The UI displays
-`name` when present, otherwise `code`; a custom category uses its shared
-`name` in both languages. Inactive categories remain referenced by past
-expenses and cannot be assigned to new expenses.
-
-`OperatingExpense` stores `categoryId`, positive EGP `amount` rounded to two
-decimals, `expenseDate` as a Cairo calendar date (`YYYY-MM-DD`), `method`
-(`PaymentMethod`), nullable `payee` and `notes`, `recordedBy`, `isDeleted`
-(default `false`), and timestamps. Dates cannot be in the future. `expenseDate`
-contains no time of payment. `createdAt`/`updatedAt` represent record activity
-and must not be combined with an expense date to fabricate a payment timestamp.
-`DELETE /api/v1/operating-expenses/:id` sets `isDeleted: true`, excludes the
-row from the active ledger and totals, and writes `operating_expense_deleted`
-to the audit log. No expense is hard deleted. No `migrate:expenses` script exists in this checkout; existing records are not rewritten automatically. Edits and category mutations write per-field old/new
-values to `AuditLog` in the same Mongo transaction.
-
-`GET /api/v1/operating-expenses` accepts inclusive Cairo `from`/`to`,
-`categoryId`, `method`, `search`, `page`, and `limit`. Its `items` and `meta` are paginated; its `summary`
-(`totalAmount`, `count`, `topCategoryId`) covers **all active rows** matching
-the date, category, method, and search filters, regardless of page.
-Category endpoints are nested under `/api/v1/operating-expenses/categories`.
+The operating-expense API and its `OperatingExpense` and `ExpenseCategory`
+collections are retired. They are not changed on startup. Inspect existing
+record counts with `npm run cleanup:expenses` (dry run), then explicitly run
+`npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA` against the
+intended database to delete both collections. Expense/category audit entries in
+the shared `AuditLog` collection remain available.
 
 Invoice, customer payment, purchase, supplier payment, and dashboard filters
 also accept an inclusive Cairo `from`/`to` pair as an alternative to
@@ -482,12 +468,16 @@ all presets. Responses always include all three arrays, including legacy items.
 Sales and purchase lines accept optional positive meter dimensions for piece
 items. These are descriptive only: totals and stock still use quantity. Cubic
 items require all three dimensions and use volume. New lines store a
-server-controlled `pricingModeSnapshot` (`per_piece` or `per_cubic_meter`), also
+server-controlled `pricingModeSnapshot` (`per_piece`, `per_cubic_meter`, or
+`free_amount`), also
 returned in line responses. Request bodies cannot supply this field. Editing a
 sale writes new snapshots from current item pricing. Reversing old lines and
 dashboard quantity/COGS calculations use the saved snapshot. Legacy lines without
 one fall back to cubic only when all three dimensions are present; otherwise
-piece pricing. No existing records are rewritten.
+piece pricing. Free-amount sales lines use quantity 1, amount as `piecePrice`,
+no dimensions, zero cost, and no stock movement. They are excluded from unit
+rankings and displayed physical quantity/cubic totals. No existing records are
+rewritten.
 
 Seed sources include empty, single and multiple dimension presets, two customers
 without phones, a supplier without a phone, and piece/cubic lines with pricing
@@ -497,12 +487,8 @@ snapshots. Seed scripts have not been run against existing databases.
 
 POST /api/v1/items/:id/dimension-defaults accepts { dimension: thickness | width | length, value: number } and returns { itemId, dimensionDefaults } within the standard envelope. Existing item-management roles apply. Values must be positive and finite; arrays are deduplicated and numerically sorted. Missing/deleted items return 404. The append uses a Mongo transaction with transient-write-conflict retries, and item_edited auditing in the same transaction. Duplicates succeed without another audit. No migration or existing-record rewrite is required.
 
-## Planned recurrence (not installed)
-
-Recurring schedules and individual occurrences are proposed additions, not current collections. Existing OperatingExpense records remain paid entries. See [the recurring expense design](./PHASES.md#planned-recurring-operating-expenses); no new recurrence indexes or migrations have been applied.
-
 ## Invoice navigation and receipt presentation contracts
 
 `GET /sales-invoices/:id/neighbors` retains nullable `previousId`/`nextId` for the same customer, ordered by createdAt and _id. It adds nullable `previousByNumberId`/`nextByNumberId` for all numeric INV-prefixed invoice numbers, including cancelled/cash sales and skipping gaps. The non-unique `invoice_number_navigation` index uses `{ invoiceNumber: 1 }` with `{ locale: "en", numericOrdering: true }`, matching the numeric neighbor queries. Existing number generation and records are unchanged.
 
-Authenticated and public receipt lines expose resolved `pricingModeSnapshot`, including the established legacy fallback. `piecePrice` remains the saved piece/m³ rate. Clients calculate display-only cubic per-piece price from six-decimal meter volume × saved rate; explicit piece lines retain their saved rate even with dimensions. Persisted line totals and invoice totals remain authoritative and are never recalculated from the rounded displayed unit price.
+Authenticated and public receipt lines expose resolved `pricingModeSnapshot`, including the established legacy fallback. For stocked modes, `piecePrice` remains the saved piece/m³ rate. Clients calculate display-only cubic per-piece price from six-decimal meter volume × saved rate; explicit piece lines retain their saved rate even with dimensions. Free-amount lines display their item, optional note, and total, leaving quantity, dimensions, and unit price blank. Persisted line and invoice totals remain authoritative.

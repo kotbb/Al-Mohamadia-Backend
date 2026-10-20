@@ -462,6 +462,15 @@ describe('PurchasesService', () => {
       await expect(service.create(dto, actor)).rejects.toThrow(BadRequestException);
     });
 
+    it('rejects free-amount items before creating a purchase', async () => {
+      supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));
+      itemModel.find.mockReturnValue(mockQuery([makePieceItem({ pricingMode: PricingMode.FREE_AMOUNT })]));
+      await expect(
+        service.create({ supplierId, lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 10 }] }, actor),
+      ).rejects.toThrow(BadRequestException);
+      expect(purchaseInvoiceModel.create).not.toHaveBeenCalled();
+    });
+
     it('fails if cubic-meter item is missing dimensions', async () => {
       supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));
       itemModel.find.mockReturnValue(mockQuery([makeCubicItem()]));

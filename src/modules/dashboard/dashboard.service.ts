@@ -28,7 +28,6 @@ import { roundMoney } from '../../shared/utils/round-money/round-money.util';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { Payment, PaymentDocument } from '../payments/schemas/payment.schema';
-import { OperatingExpense, OperatingExpenseDocument } from '../operating-expenses/schemas/operating-expense.schema';
 import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardResponseDto } from './dto/response/dashboard-response.dto';
 import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
@@ -41,8 +40,6 @@ export class DashboardService {
     private readonly salesInvoiceModel: Model<SalesInvoiceDocument>,
     @InjectModel(Payment.name)
     private readonly paymentModel: Model<PaymentDocument>,
-    @InjectModel(OperatingExpense.name)
-    private readonly operatingExpenseModel: Model<OperatingExpenseDocument>,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Item.name)
@@ -58,24 +55,13 @@ export class DashboardService {
     const todayIso = formatCairoDate(new Date());
     const todayRange = cairoPeriodRange(SalesInvoicePeriod.DAY, todayIso);
 
-    const [
-      todaySalesAgg,
-      collectedAgg,
-      debtAgg,
-      periodInvoices,
-      topItemsAgg,
-      periodSalesAgg,
-      todayExpenses,
-      periodExpenses,
-    ] = await Promise.all([
+    const [todaySalesAgg, collectedAgg, debtAgg, periodInvoices, topItemsAgg, periodSalesAgg] = await Promise.all([
       this.aggregateTodaySales(todayRange.from, todayRange.to),
       this.aggregateCollected(todayRange.from, todayRange.to),
       this.aggregateDebt(),
       this.fetchPeriodSavedInvoices(periodRange.from, periodRange.to),
       this.aggregateTopSellingItems(periodRange.from, periodRange.to),
       this.aggregateTodaySales(periodRange.from, periodRange.to),
-      this.aggregateExpenses(todayRange.from, todayRange.to),
-      this.aggregateExpenses(periodRange.from, periodRange.to),
     ]);
 
     const sales = roundMoney(todaySalesAgg.totalSum - todaySalesAgg.discountSum);
@@ -126,16 +112,12 @@ export class DashboardService {
       today: {
         sales,
         estimatedProfit,
-        operatingExpenses: todayExpenses,
-        estimatedNetProfit: roundMoney(estimatedProfit - todayExpenses),
         invoiceCount: todaySalesAgg.invoiceCount,
         collected: roundMoney(collectedAgg),
       },
       periodFinancials: {
         sales: roundMoney(periodSalesAgg.totalSum - periodSalesAgg.discountSum),
         estimatedGrossProfit: periodGrossProfit,
-        operatingExpenses: periodExpenses,
-        estimatedNetProfit: roundMoney(periodGrossProfit - periodExpenses),
       },
       debt: {
         totalDebt: roundMoney(debtAgg.totalDebt),
@@ -214,14 +196,6 @@ export class DashboardService {
   private async aggregateCollected(from: Date, to: Date): Promise<number> {
     const agg = await this.paymentModel.aggregate<CollectedAgg>(buildCollectedPipeline(from, to));
     return agg[0]?.totalAmount ?? 0;
-  }
-
-  private async aggregateExpenses(from: Date, to: Date): Promise<number> {
-    const rows = await this.operatingExpenseModel.aggregate<{ amount: number }>([
-      { $match: { isDeleted: false, expenseDate: { $gte: formatCairoDate(from), $lt: formatCairoDate(to) } } },
-      { $group: { _id: null, amount: { $sum: '$amount' } } },
-    ]);
-    return roundMoney(rows[0]?.amount ?? 0);
   }
 
   private async aggregateDebt(): Promise<DebtAgg> {

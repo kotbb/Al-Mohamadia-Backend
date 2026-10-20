@@ -139,6 +139,7 @@ export class SalesInvoicesService {
       );
 
       for (const row of builtLines) {
+        if (row.stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: -row.stockDelta } }, { session });
       }
 
@@ -268,7 +269,7 @@ export class SalesInvoicesService {
           widthM: line.width,
           lengthM: line.length,
         });
-
+        if (stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
       }
 
@@ -409,12 +410,13 @@ export class SalesInvoicesService {
           widthM: line.width,
           lengthM: line.length,
         });
-
+        if (stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: stockDelta } }, { session });
       }
 
       // 2. Apply new lines stock
       for (const row of builtLines) {
+        if (row.stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: -row.stockDelta } }, { session });
       }
 
@@ -696,6 +698,17 @@ export class SalesInvoicesService {
       throw new BadRequestException('quantity must be greater than 0');
     }
 
+    const isFreeAmount = item.pricingMode === PricingMode.FREE_AMOUNT;
+    if (
+      isFreeAmount &&
+      (lineDto.quantity !== 1 ||
+        lineDto.thickness !== undefined ||
+        lineDto.width !== undefined ||
+        lineDto.length !== undefined)
+    ) {
+      throw new BadRequestException('Free-amount lines require quantity 1 and no dimensions');
+    }
+
     const isCubic = item.pricingMode === PricingMode.PER_CUBIC_METER;
     if (isCubic) {
       if (lineDto.thickness === undefined || lineDto.width === undefined || lineDto.length === undefined) {
@@ -716,7 +729,7 @@ export class SalesInvoicesService {
     }
 
     const piecePrice = roundMoney(lineDto.piecePrice);
-    const costPriceSnapshot = roundMoney(item.cost);
+    const costPriceSnapshot = isFreeAmount ? 0 : roundMoney(item.cost);
     const lineTotal = roundMoney(
       lineTotalForPricing({
         pricingMode: item.pricingMode,
@@ -736,7 +749,7 @@ export class SalesInvoicesService {
       lengthM: length,
     });
 
-    validateLineValues({ isCubic, thickness, width, length, stockDelta, lineTotal });
+    validateLineValues({ isCubic, isFreeAmount, thickness, width, length, stockDelta, lineTotal });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
 

@@ -209,6 +209,56 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('create', () => {
+    it('stores a free amount as a zero-cost line without stock movement', async () => {
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem({ pricingMode: PricingMode.FREE_AMOUNT, cost: 90 })]),
+      });
+      await service.create(
+        {
+          type: SalesInvoiceType.CASH_SALE,
+          lines: [{ itemId, quantity: 1, piecePrice: 125.5, note: 'تصنيع' }],
+          paid: 125.5,
+        },
+        actor,
+      );
+      expect(salesInvoiceModel.create.mock.calls[0][0][0]).toEqual(
+        expect.objectContaining({
+          total: 125.5,
+          lines: [
+            expect.objectContaining({
+              pricingModeSnapshot: PricingMode.FREE_AMOUNT,
+              quantity: 1,
+              piecePrice: 125.5,
+              costPriceSnapshot: 0,
+              lineTotal: 125.5,
+              note: 'تصنيع',
+              width: null,
+              length: null,
+              thickness: null,
+            }),
+          ],
+        }),
+      );
+      expect(itemModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects quantity and dimensions on free-amount lines', async () => {
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem({ pricingMode: PricingMode.FREE_AMOUNT })]),
+      });
+      await expect(
+        service.create(
+          { type: SalesInvoiceType.CASH_SALE, lines: [{ itemId, quantity: 2, piecePrice: 100 }], paid: 200 },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create(
+          { type: SalesInvoiceType.CASH_SALE, lines: [{ itemId, quantity: 1, piecePrice: 100, width: 1 }], paid: 100 },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
     it('creates cash sale fully paid, deducts stock, creates payment, no balance change', async () => {
       salesInvoiceModel.create.mockResolvedValue([
         makeInvoice({
@@ -413,6 +463,26 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('cancel', () => {
+    it('cancels a free-amount invoice without restoring stock', async () => {
+      const invoice = makeInvoice({
+        lines: [
+          {
+            itemId: { toString: () => itemId },
+            pricingModeSnapshot: PricingMode.FREE_AMOUNT,
+            quantity: 1,
+            piecePrice: 125,
+            costPriceSnapshot: 0,
+            lineTotal: 125,
+          },
+        ],
+        total: 125,
+        paid: 0,
+        remaining: 125,
+      });
+      salesInvoiceModel.findById.mockReturnValue({ exec: () => Promise.resolve(invoice) });
+      await service.cancel(invoiceId, actor);
+      expect(itemModel.updateOne).not.toHaveBeenCalled();
+    });
     it('restores stock, reverses balance, voids payments', async () => {
       const customer = makeCustomer({ balance: 600 });
       const invoice = makeInvoice();
@@ -489,6 +559,40 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('update', () => {
+    it('replaces a free-amount line without stock changes', async () => {
+      const invoice = makeInvoice({
+        lines: [
+          {
+            itemId: { toString: () => itemId },
+            pricingModeSnapshot: PricingMode.FREE_AMOUNT,
+            quantity: 1,
+            piecePrice: 100,
+            costPriceSnapshot: 0,
+            lineTotal: 100,
+          },
+        ],
+        total: 100,
+        paid: 0,
+        remaining: 100,
+      });
+      salesInvoiceModel.findById.mockReturnValue({ exec: () => Promise.resolve(invoice) });
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem({ pricingMode: PricingMode.FREE_AMOUNT })]),
+        session: () => ({ exec: () => Promise.resolve([makeItem({ pricingMode: PricingMode.FREE_AMOUNT })]) }),
+      });
+      const result = await service.update(
+        invoiceId,
+        {
+          type: SalesInvoiceType.CUSTOMER_SALE,
+          customerId,
+          lines: [{ itemId, quantity: 1, piecePrice: 125 }],
+          paid: 0,
+        },
+        actor,
+      );
+      expect(result.total).toBe(125);
+      expect(itemModel.updateOne).not.toHaveBeenCalled();
+    });
     it('rejects editing cancelled invoice', async () => {
       salesInvoiceModel.findById.mockReturnValue({
         exec: () => Promise.resolve(makeInvoice({ status: SalesInvoiceStatus.CANCELLED })),

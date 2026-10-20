@@ -346,7 +346,7 @@ Query params: `period` (`day` \| `week` \| `month` \| `year`) with `date`
 month. The selected range applies to `periodFinancials`, `salesSeries` and
 `topSellingItems`; today and live debt KPIs remain independent.
 
-Response: `{ today: { sales, estimatedProfit, operatingExpenses, estimatedNetProfit, invoiceCount, collected }, periodFinancials: { sales, estimatedGrossProfit, operatingExpenses, estimatedNetProfit }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`. `today.estimatedProfit` retains its existing gross-profit meaning. Custom ranges return `period.period = "custom"`.
+Response: `{ today: { sales, estimatedProfit, invoiceCount, collected }, periodFinancials: { sales, estimatedGrossProfit }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`. `today.estimatedProfit` retains its gross-profit meaning. Free-amount charges contribute to sales and gross profit but not item quantity rankings. Custom ranges return `period.period = "custom"`.
 
 Module: `src/modules/dashboard`.
 
@@ -382,20 +382,24 @@ Module: `src/modules/audit` (backend).
 
 ---
 
-## Operating expenses extension
+## Free-amount sales and expense retirement
 
-- [x] Paid EGP operating expense ledger, Cairo expense date, editable categories,
-  audited edits and terminal soft deletes; separate from stock purchases and supplier payments.
-- [x] Authenticated `/operating-expenses` route group with nested `/categories` routes; `npm run seed:expenses` seeds the starter categories on demand.
-  The ledger summary covers all active matching records independently of page.
-- [x] Dashboard preserves `today.estimatedProfit` as gross profit and adds
-  `today.operatingExpenses`, `today.estimatedNetProfit`, and `periodFinancials`
-  with sales, gross profit, operating expenses, and estimated net profit.
-- [x] Frontend Finance destination, bilingual ledger, filters, forms, detail,
-  category management, soft delete confirmation, and dashboard cards.
-- [x] Custom inclusive Cairo `from`/`to` ranges for invoices, customer payments,
-  purchases, supplier payments, and dashboard; operating expenses use the same picker.
-- [x] Operating expenses use terminal soft deletion through `isDeleted`; no expense migration command is included.
+- [x] `free_amount` (مبلغ حر) is a third, immutable item pricing mode. Item creation
+  needs a name, code, and category; price, cost, dimensions, stock, and reorder
+  threshold are not editable for this mode.
+- [x] Cash and customer invoices accept a positive EGP amount and optional note
+  for each free-amount line. The server stores quantity 1 and `piecePrice` equal
+  to the amount, recalculates totals, snapshots zero cost, and skips stock changes.
+  Purchase and inventory flows exclude these items.
+- [x] Mixed receipts leave quantity, dimensions, and unit price blank for these
+  lines. Displayed quantity/cubic totals and unit rankings count physical goods
+  only; charges remain in sales and gross profit.
+- [x] Operating-expense UI/API and expense-dependent dashboard fields are retired.
+  Historical audit records remain. Inspect counts with `npm run cleanup:expenses`;
+  delete expense/category collections only by explicitly running
+  `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA`.
+- [x] Custom inclusive Cairo `from`/`to` ranges remain available for invoices,
+  customer payments, purchases, supplier payments, and dashboard.
 
 ## Phase 10 — Polish & Hardening
 
@@ -444,14 +448,9 @@ Module: `src/modules/audit` (backend).
 - [x] Root AGENTS.md is the single instruction file in each repository; architecture checks run before builds.
 - [ ] Manual English/Arabic, light/dark and mobile verification remains separate from automated checks.
 
-## Planned: recurring operating expenses
-
-Not implemented: configurable repeat intervals, first/optional end dates, due/overdue occurrences, one full payment per occurrence, skip reasons, pause/resume/stop, and dashboard due counts. Only confirmed payments will enter the existing paid ledger. Email reminders and partial payments are deferred. No recurrence collections, endpoints or scheduler exist yet.
-
 ## Navigation and receipt presentation
 
 - [x] Invoice-first Sales & Customers and Purchases & Suppliers hubs; clickable customer/supplier/sales/purchase rows retain independent nested actions and brown primary-link hover.
-- [x] Expense ledger/detail use stable localized date-only formatting.
 - [x] Numeric invoice neighbors supplement existing customer chronology with cancelled/cash invoices, gap handling and numeric collation.
 - [x] Resolved receipt pricing snapshots support cubic per-piece display without changing stored rates/totals.
 - [ ] Manual language/mobile/hover/export checks remain separate from automated verification.
@@ -469,13 +468,10 @@ stay with requests. Controllers, services, tests and cross-feature imports use
 the new paths. This refactor preserves validation, API payloads and persistence.
 
 
-### Current locale, phone and Finance controls
+### Current locale and phone controls
 
 - Arabic/RTL is the unprefixed default with locale detection disabled; explicit
   English routes remain LTR. Theme and language switches live in the user menu.
 - Optional Egyptian mobiles accept local/+20 formats and use English digits.
   The ten-digit international portion keeps generic `1XX XXX XXXX` guidance.
   Errors appear on invalid submit attempts, not while typing or on blur.
-- Finance Custom From/To fields stay beside the preset selector on desktop,
-  with reserved width, and stack on smaller screens. Expense dates remain
-  date-only; no payment time has been added. Record creation is a separate timestamp.

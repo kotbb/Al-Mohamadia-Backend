@@ -17,7 +17,10 @@ import { SupplierPayment, SupplierPaymentDocument } from '../supplier-payments/s
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
 import { CreatePurchaseInvoiceDto, CreatePurchaseInvoiceLineDto } from './dto/request/create-purchase-invoice.dto';
 import { ListPurchaseInvoicesQueryDto } from './dto/request/list-purchase-invoices-query.dto';
-import { PurchaseInvoiceListResponseDto, PurchaseInvoiceResponseDto } from './dto/response/purchase-invoice-response.dto';
+import {
+  PurchaseInvoiceListResponseDto,
+  PurchaseInvoiceResponseDto,
+} from './dto/response/purchase-invoice-response.dto';
 import { PurchaseInvoice, PurchaseInvoiceDocument } from './schemas/purchase-invoice.schema';
 import { BuiltPurchaseLine } from './types/built-purchase-line.type';
 import { PurchaseInvoiceListFilter } from './types/purchase-invoice-list-filter.type';
@@ -63,6 +66,9 @@ export class PurchasesService {
     for (const item of items) {
       if (!item.isActive) {
         throw new BadRequestException(`Item is inactive: ${item.name}`);
+      }
+      if (item.pricingMode === PricingMode.FREE_AMOUNT) {
+        throw new BadRequestException(`Free-amount items cannot be purchased: ${item.name}`);
       }
     }
 

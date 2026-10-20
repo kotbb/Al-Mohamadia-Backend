@@ -109,6 +109,13 @@ describe('InventoryService', () => {
   });
 
   describe('adjustStock', () => {
+    it('rejects stock adjustments for a free-amount item', async () => {
+      itemModel.findOne.mockReturnValue(mockQuery(makeItem({ pricingMode: PricingMode.FREE_AMOUNT })));
+      await expect(service.adjustStock({ itemId, newQuantity: 1, reason: 'test' }, actor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(connection.startSession).not.toHaveBeenCalled();
+    });
     it('updates item stock and writes a stock_adjusted audit row', async () => {
       const item = makeItem({ stockQuantity: 10 });
       itemModel.findOne.mockReturnValue(mockQuery(item));
@@ -201,6 +208,10 @@ describe('InventoryService', () => {
       };
 
       const result = await service.getStockList(query);
+
+      expect(itemModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({ pricingMode: { $ne: PricingMode.FREE_AMOUNT } }),
+      );
 
       expect(result.items.length).toBe(4);
       expect(result.summary.totalItems).toBe(4);

@@ -20,7 +20,6 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SupplierPaymentsModule } from './modules/supplier-payments/supplier-payments.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
-import { OperatingExpensesModule } from './modules/operating-expenses/operating-expenses.module';
 import * as Joi from 'joi';
 
 @Module({
@@ -82,7 +81,6 @@ import * as Joi from 'joi';
     PurchasesModule,
     SupplierPaymentsModule,
     InventoryModule,
-    OperatingExpensesModule,
     DashboardModule,
   ],
   providers: [

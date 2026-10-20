@@ -46,4 +46,9 @@ describe('cubic-meter.util', () => {
       }),
     ).toBe(17);
   });
+
+  it('does not move stock for a free amount and uses its amount as the total', () => {
+    expect(stockDeltaForLine({ pricingMode: 'free_amount', quantity: 1 })).toBe(0);
+    expect(lineTotalForPricing({ pricingMode: 'free_amount', quantity: 1, piecePrice: 125.5 })).toBe(125.5);
+  });
 });

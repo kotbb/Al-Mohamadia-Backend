@@ -63,12 +63,14 @@ export function buildSalesCogsPipeline(from: Date, to: Date): PipelineStage[] {
       $project: {
         lineCogs: {
           $cond: [
-            mongoLineIsCubicExpr(),
+            { $eq: ['$lines.pricingModeSnapshot', PricingMode.FREE_AMOUNT] },
+            0,
             {
-              $multiply: ['$lines.quantity', mongoLineVolumeM3Expr(), '$lines.costPriceSnapshot'],
-            },
-            {
-              $multiply: ['$lines.quantity', '$lines.costPriceSnapshot'],
+              $cond: [
+                mongoLineIsCubicExpr(),
+                { $multiply: ['$lines.quantity', mongoLineVolumeM3Expr(), '$lines.costPriceSnapshot'] },
+                { $multiply: ['$lines.quantity', '$lines.costPriceSnapshot'] },
+              ],
             },
           ],
         },
@@ -126,6 +128,7 @@ export function buildTopSellingItemsPipeline(from: Date, to: Date): PipelineStag
       },
     },
     { $unwind: '$lines' },
+    { $match: { 'lines.pricingModeSnapshot': { $ne: PricingMode.FREE_AMOUNT } } },
     {
       $project: {
         itemId: { $toString: '$lines.itemId' },

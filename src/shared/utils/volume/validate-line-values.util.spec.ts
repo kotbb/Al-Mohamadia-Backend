@@ -6,6 +6,18 @@ describe('write-time line validation', () => {
     expect(() => validateLineValues(base)).not.toThrow();
     expect(() => validateLineValues({ ...base, isCubic: false, stockDelta: 1, thickness: 0.000001 })).not.toThrow();
   });
+  it('preserves rounded-zero totals for physical lines with positive stock', () => {
+    expect(() => validateLineValues({ ...base, lineTotal: 0 })).not.toThrow();
+    expect(() => validateLineValues({ ...base, isCubic: false, stockDelta: 1, lineTotal: 0 })).not.toThrow();
+  });
+  it('requires a positive free amount with zero stock movement', () => {
+    expect(() =>
+      validateLineValues({ ...base, isCubic: false, isFreeAmount: true, stockDelta: 0, lineTotal: 0 }),
+    ).toThrow();
+    expect(() =>
+      validateLineValues({ ...base, isCubic: false, isFreeAmount: true, stockDelta: 0, lineTotal: 0.01 }),
+    ).not.toThrow();
+  });
   it('rejects zero rounded volumes and overflowing calculations', () => {
     expect(() => validateLineValues({ ...base, thickness: 0.000001, width: 0.000001, length: 0.000001 })).toThrow();
     expect(() => validateLineValues({ ...base, stockDelta: Infinity })).toThrow();

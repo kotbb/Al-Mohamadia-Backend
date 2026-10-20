@@ -3,8 +3,6 @@ import { SalesInvoicePeriod } from '../../../../shared/enums/sales-invoice-perio
 export class DashboardTodayDto {
   sales: number;
   estimatedProfit: number;
-  operatingExpenses: number;
-  estimatedNetProfit: number;
   invoiceCount: number;
   collected: number;
 }
@@ -12,8 +10,6 @@ export class DashboardTodayDto {
 export class DashboardPeriodFinancialsDto {
   sales: number;
   estimatedGrossProfit: number;
-  operatingExpenses: number;
-  estimatedNetProfit: number;
 }
 
 export class DashboardDebtDto {
