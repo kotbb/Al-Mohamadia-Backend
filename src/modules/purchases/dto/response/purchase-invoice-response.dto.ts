@@ -20,6 +20,7 @@ export class PurchaseInvoiceResponseDto {
   lines: PurchaseInvoiceLineResponseDto[];
   total: number;
   paid: number;
+  accountPaymentAmount: number;
   remaining: number;
   status: PurchaseInvoiceStatus;
   notes: string | null;

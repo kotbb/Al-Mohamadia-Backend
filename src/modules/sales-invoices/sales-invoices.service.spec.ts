@@ -24,7 +24,7 @@ describe('SalesInvoicesService', () => {
     findOne: jest.Mock;
     countDocuments: jest.Mock;
   };
-  let paymentModel: { create: jest.Mock; updateMany: jest.Mock; findOne: jest.Mock };
+  let paymentModel: { aggregate: jest.Mock; create: jest.Mock; updateMany: jest.Mock; findOne: jest.Mock };
   let invoiceCounterModel: { findOneAndUpdate: jest.Mock };
   let customerModel: { findOne: jest.Mock; findById: jest.Mock; find: jest.Mock };
   let itemModel: { find: jest.Mock; findById: jest.Mock; updateOne: jest.Mock };
@@ -103,6 +103,46 @@ describe('SalesInvoicesService', () => {
     ...overrides,
   });
 
+  it('uses the customer balance read inside the transaction when creating debt', async () => {
+    const staleCustomer = makeCustomer({ balance: 100 });
+    const lockedCustomer = makeCustomer({ balance: 300 });
+    customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(staleCustomer) });
+    customerModel.findById.mockReturnValue({ session: () => ({ exec: () => Promise.resolve(lockedCustomer) }) });
+    await service.create(
+      {
+        type: SalesInvoiceType.CUSTOMER_SALE,
+        customerId,
+        lines: [{ itemId, quantity: 2, piecePrice: 450 }],
+        paid: 400,
+      },
+      actor,
+    );
+    expect(lockedCustomer.balance).toBe(800);
+    expect(staleCustomer.save).not.toHaveBeenCalled();
+  });
+
+  it('creates an independent account payment alongside a partially paid invoice', async () => {
+    const customer = makeCustomer({ balance: 0 });
+    customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(customer) });
+    customerModel.findById.mockReturnValue({ session: () => ({ exec: () => Promise.resolve(customer) }) });
+    paymentModel.create.mockResolvedValue([{ _id: { toString: () => invoiceId }, method: PaymentMethod.CASH }]);
+    await service.create(
+      {
+        type: SalesInvoiceType.CUSTOMER_SALE,
+        customerId,
+        lines: [{ itemId, quantity: 2, piecePrice: 450 }],
+        paid: 400,
+        accountPaymentAmount: 700,
+      },
+      actor,
+    );
+    expect(customer.balance).toBe(-200);
+    expect(paymentModel.create).toHaveBeenCalledWith([expect.objectContaining({ invoiceId: null, amount: 700 })], {
+      session,
+    });
+    expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'payment_recorded' }), session);
+  });
+
   beforeEach(async () => {
     session = {
       startTransaction: jest.fn(),
@@ -132,6 +172,7 @@ describe('SalesInvoicesService', () => {
     };
 
     paymentModel = {
+      aggregate: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue([{}]),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
       findOne: jest.fn().mockReturnValue({
@@ -339,6 +380,7 @@ describe('SalesInvoicesService', () => {
       });
       salesInvoiceModel.create.mockResolvedValue([makeInvoice({ paid: 400, remaining: 500 })]);
 
+      customerModel.findById.mockReturnValue({ session: () => ({ exec: () => Promise.resolve(customer) }) });
       await service.create(
         {
           type: SalesInvoiceType.CUSTOMER_SALE,
@@ -559,6 +601,36 @@ describe('SalesInvoicesService', () => {
   });
 
   describe('update', () => {
+    it('allows unchanged inactive customer and item on a saved invoice', async () => {
+      const customer = makeCustomer({ isActive: false, balance: 500 });
+      const invoice = makeInvoice({
+        type: SalesInvoiceType.CUSTOMER_SALE,
+        customerId: { toString: () => customerId },
+        total: 900,
+        paid: 400,
+        remaining: 500,
+      });
+      salesInvoiceModel.findById.mockReturnValue({ exec: () => Promise.resolve(invoice) });
+      itemModel.find.mockReturnValue({
+        exec: () => Promise.resolve([makeItem({ isActive: false })]),
+        session: () => ({ exec: () => Promise.resolve([makeItem({ isActive: false })]) }),
+      });
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(customer) });
+      customerModel.findById.mockReturnValue({ session: () => ({ exec: () => Promise.resolve(customer) }) });
+
+      const result = await service.update(
+        invoiceId,
+        {
+          type: SalesInvoiceType.CUSTOMER_SALE,
+          customerId,
+          lines: [{ itemId, quantity: 2, piecePrice: 450 }],
+          paid: 400,
+        },
+        actor,
+      );
+      expect(result.total).toBe(900);
+      expect(session.commitTransaction).toHaveBeenCalled();
+    });
     it('replaces a free-amount line without stock changes', async () => {
       const invoice = makeInvoice({
         lines: [

@@ -1,9 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, IsMongoId, IsOptional, IsString, Matches, Max, Min, ValidateIf } from 'class-validator';
 import { SalesInvoicePeriod } from '../../../../shared/enums/sales-invoice-period.enum';
 import { SalesInvoiceStatus } from '../../../../shared/enums/sales-invoice-status.enum';
 
 export class ListSalesInvoicesQueryDto {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsMongoId()
+  customerId?: string;
+
   @IsOptional()
   @IsString()
   q?: string;

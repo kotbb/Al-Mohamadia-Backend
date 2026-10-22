@@ -5,6 +5,7 @@ export class SupplierPaymentResponseDto {
   supplierId: string;
   supplierName?: string | null;
   purchaseInvoiceId: string | null;
+  sourcePurchaseInvoiceId?: string | null;
   purchaseInvoiceNumber?: string | null;
   amount: number;
   method: PaymentMethod;

@@ -64,15 +64,17 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 ### Customers (`/api/v1/customers`)
 
 - Create, list, get, update, and soft-delete customers
-- Customer balance (مديونية) is maintained by the server
-- Search, filter by debt and active status, and merge duplicate customers
+- Optional starting balance and editable signed current balance (debt or credit), with transactional adjustment auditing
+- Search by customer name only, filter by debt and active status, and merge duplicates
+- Detail financial summary: lifetime net invoiced total and active payments alongside current balance
 - Optional Egyptian mobile phone (local/+20); omitted updates preserve it, explicit null clears it
 
 ### Suppliers (`/api/v1/suppliers`)
 
 - Create, list, get, update, and soft-delete suppliers
-- Amount owed is maintained by the server
-- Search, filter by debt and active status, and merge duplicate suppliers
+- Optional starting amount and editable signed current amount owed, with transactional adjustment auditing
+- Search by supplier name/phone, filter by debt and active status, and merge duplicates
+- Detail financial summary: lifetime purchases and active payments alongside current amount owed
 - Optional Egyptian mobile phone (local/+20); supplied numbers remain normalized and unique
 
 ### Sales invoices (`/api/v1/sales-invoices`)
@@ -91,19 +93,19 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 
 ### Payments (`/api/v1/payments`)
 
-- Record a payment on an invoice or a standalone customer debt payment
+- Record standalone customer payments at any balance, including advance credit; invoice-linked payments are captured through invoice create/edit
 - List and get payments
 - Cancel a payment (voids it; does not hard-delete)
 
 ### Purchases (`/api/v1/purchases`)
 
-- Create a purchase invoice (increases stock and supplier debt)
+- Create and edit purchase invoices with transactional stock, supplier debt, and linked-payment reconciliation
 - List and get purchases
 - Cancel a purchase (reverses stock and supplier debt)
 
 ### Supplier payments (`/api/v1/supplier-payments`)
 
-- Record a supplier payment
+- Record standalone supplier payments at any balance, including advance credit
 - List and get payments
 - Cancel a supplier payment
 
@@ -184,7 +186,7 @@ copy .env.example .env
 | `JWT_ACCESS_EXPIRES_IN`  | Access token lifetime (e.g. `10m`)                                |
 | `JWT_REFRESH_EXPIRES_IN` | Refresh token lifetime (e.g. `21d`)                               |
 | `FRONTEND_URL`           | Base URL of frontend for public WhatsApp receipts                 |
-| `CORS_ORIGIN`            | Comma-separated browser origins (default `http://localhost:3001`) |
+| `CORS_ORIGIN`            | Single allowed browser origin (default `http://localhost:3001`; comma-separated lists are not parsed) |
 | `THROTTLE_DISABLED`      | Set `true` to disable rate limits                                 |
 | `THROTTLE_AUTH_LIMIT`    | Auth requests per minute per IP (default `10`)                    |
 | `THROTTLE_GLOBAL_LIMIT`  | Other requests per minute per IP (default `300`)                  |
@@ -274,9 +276,7 @@ Item list query params: `categoryId`, `isActive`.
 | `PATCH`  | `/api/v1/customers/:id`   | Both | Update customer           |
 | `DELETE` | `/api/v1/customers/:id`   | Both | Soft-delete customer      |
 
-Customer list query params: `q`, `hasDebt`, `isActive`, `page`, `limit`.
-Supplied phones require 11 local digits starting with 010/011/012/015, or the
-equivalent `+20` format. New/changed values normalize to English local digits;
+Customer list query params: `q` (customer name only), `hasDebt`, `isActive`, `page`, `limit`.
 
 ### Suppliers
 
@@ -305,7 +305,7 @@ Supplier list query params: `q`, `hasDebt`, `isActive`, `page`, `limit`.
 | `POST`  | `/api/v1/sales-invoices/:id/cancel`    | Both | Cancel invoice                                      |
 | `GET`   | `/api/v1/public/sales-invoices/:token` | No   | Public invoice receipt JSON by share token          |
 
-Invoice list query params: `q`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
+Invoice list query params: `q` (invoice number or customer name/phone), `customerId`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
 Neighbor responses retain `previousId`/`nextId` for customer chronology and add
 `previousByNumberId`/`nextByNumberId` across numeric invoice order. Cash sales have
@@ -323,7 +323,7 @@ invoices, skips gaps and returns null at boundaries.
 | `GET`  | `/api/v1/payments/:id`        | Both | Get payment               |
 | `POST` | `/api/v1/payments/:id/cancel` | Both | Cancel payment            |
 
-Payment list query params: `customerId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
+Payment list query params: `customerId`, `invoiceId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
 ### Purchases
 
@@ -332,9 +332,10 @@ Payment list query params: `customerId`, `status`, `type`, `method`, `period`, `
 | `POST` | `/api/v1/purchases`            | Both | Create purchase invoice |
 | `GET`  | `/api/v1/purchases`            | Both | List purchases          |
 | `GET`  | `/api/v1/purchases/:id`        | Both | Get purchase            |
+| `PATCH`| `/api/v1/purchases/:id`        | Both | Edit saved purchase     |
 | `POST` | `/api/v1/purchases/:id/cancel` | Both | Cancel purchase         |
 
-Purchase list query params: `supplierId`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
+Purchase list query params: `q`, `supplierId`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
 ### Supplier payments
 
@@ -345,7 +346,7 @@ Purchase list query params: `supplierId`, `status`, `period`, `date`, `from`, `t
 | `GET`  | `/api/v1/supplier-payments/:id`        | Both | Get payment               |
 | `POST` | `/api/v1/supplier-payments/:id/cancel` | Both | Cancel payment            |
 
-Supplier payment list query params: `supplierId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
+Supplier payment list query params: `supplierId`, `purchaseInvoiceId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
 ### Inventory
 
@@ -408,6 +409,8 @@ npm run test:e2e
 npm run test:cov
 ```
 
+E2E tests create temporary MongoDB replica sets through `mongodb-memory-server`; they do not use the configured application database. The MongoDB test binary must be available (or downloadable on first use).
+
 `npm run build` runs architecture validation before compilation. For read-only
 linting use `npx eslint "{src,test}/**/*.ts"`; `npm run lint` auto-fixes files.
 
@@ -425,8 +428,3 @@ npm run seed:inventory    # sample stock adjustments
 
 Use mock catalog/party/invoice/purchase/inventory seeds only against an intended
 development database. No seeds or migrations run automatically at application startup.
-
-The retired operating-expense and category collections require explicit cleanup.
-`npm run cleanup:expenses` reports counts without changing data. Against the
-intended database, `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA`
-deletes those collections while retaining expense-related audit history.

@@ -4,6 +4,7 @@ export class SupplierResponseDto {
   phone: string | null;
   address: string | null;
   amountOwed: number;
+  financialSummary?: { totalInvoiced: number; totalPaid: number };
   isActive: boolean;
   isDeleted: boolean;
   createdAt?: Date;

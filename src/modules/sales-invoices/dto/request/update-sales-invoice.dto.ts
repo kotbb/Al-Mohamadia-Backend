@@ -44,6 +44,12 @@ export class UpdateSalesInvoiceDto {
   paid: number;
 
   @ValidateIf((_, value) => value !== undefined)
+  @IsNumber()
+  @Min(0)
+  @IsMoneyAmount()
+  accountPaymentAmount?: number;
+
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
 

@@ -121,8 +121,9 @@ Domains (ownership):
    `*.dto.ts`.
 5. Soft-delete / active flags (`isDeleted`, `isActive`) and timestamps
    (`createdAt` / `updatedAt`) must match [`DATABASE.md`](docs/DATABASE.md).
-6. Never trust client-computed fields (`remaining`, `balance`, `amountOwed`,
-   `lineTotal`, price snapshots) — always recompute server-side.
+6. Recompute invoice-derived fields (`remaining`, `lineTotal`, price snapshots)
+   and account deltas server-side. Explicit account balance corrections are
+   validated user inputs, saved transactionally with audit.
 7. Any mutation touching more than one collection (invoice save/cancel,
    payment, purchase, stock adjust + audit) must use a **Mongo session /
    transaction**.
@@ -175,7 +176,7 @@ Hard rules — never weaken for convenience.
    required yet.
 2. **User management** (create / deactivate admins): `super_admin` only.
 3. All other operational endpoints: `admin` **and** `super_admin`.
-4. No public self-registration. Seed the first super admin (Phase 1).
+4. No public self-registration. Initial super-admin provisioning is external; no first-user seed command is shipped.
 5. Access token: Bearer header. Refresh tokens: store **hash only** in
    Mongo; rotate and hard-delete old tokens on refresh/logout.
 6. Guard every protected route. Do not “fix” missing guards inside
@@ -213,6 +214,20 @@ Hard rules — never weaken for convenience.
 - Cash sales must be fully paid; no overpay/tips. Customer sales:
   `0 ≤ paid ≤ net`. `piecePrice` may be overridden; `costPriceSnapshot`
   always from live `Item.cost`.
+- Sales/purchase create and edit accept a separate `accountPaymentAmount`.
+  It creates an independent standalone account payment in the same transaction;
+  API `paid` stays capped at invoice net; the frontend splits entered excess into
+  `accountPaymentAmount`. It may exceed account debt and create credit.
+  Standalone payments also permit advance credit on active accounts. Independent
+  payments survive invoice edit/reassignment/cancellation; cancel them separately.
+- Customer `balance` and supplier `amountOwed` are signed finite two-decimal current
+  balances. Create accepts an optional starting value; PATCH may explicitly set
+  the actual current amount. Save corrections and audit old/new plus adjustment
+  difference in one transaction; leave invoices/payments unchanged. Contact-only
+  edits omit unchanged balance fields. No opening balance or legacy derivation.
+- Invoice/receipt responses include active same-party origin-linked
+  `accountPaymentAmount`; display total is `paid + accountPaymentAmount`, with
+  a conditional breakdown. Lifecycle payment links remain separate from provenance.
 - Invoice numbers: `INV-NNNN` via `InvoiceCounter` (sequence keyed by Cairo year).
 - On cancel, void on-invoice payments with `reversedAt` / `reversedBy`.
 

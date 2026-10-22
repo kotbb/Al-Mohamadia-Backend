@@ -18,8 +18,8 @@ describe('CustomersService', () => {
     countDocuments: jest.Mock;
     aggregate: jest.Mock;
   };
-  let salesInvoiceModel: { updateMany: jest.Mock };
-  let paymentModel: { updateMany: jest.Mock };
+  let salesInvoiceModel: { updateMany: jest.Mock; aggregate: jest.Mock };
+  let paymentModel: { updateMany: jest.Mock; aggregate: jest.Mock };
   let auditService: { log: jest.Mock };
   let connection: { startSession: jest.Mock };
   let session: {
@@ -80,9 +80,11 @@ describe('CustomersService', () => {
     };
 
     salesInvoiceModel = {
+      aggregate: jest.fn().mockReturnValue({ session: jest.fn().mockReturnThis(), exec: () => Promise.resolve([]) }),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
     };
     paymentModel = {
+      aggregate: jest.fn().mockReturnValue({ session: jest.fn().mockReturnThis(), exec: () => Promise.resolve([]) }),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
     };
     auditService = { log: jest.fn().mockResolvedValue({}) };
@@ -107,6 +109,14 @@ describe('CustomersService', () => {
     expect(service).toBeDefined();
   });
 
+  it('searches customers by escaped name only, never by phone', async () => {
+    await service.findAll({ q: 'Ali.+', page: 1, limit: 10 });
+    expect(customerModel.find).toHaveBeenCalledWith({
+      isDeleted: false,
+      name: { $regex: 'Ali\\.\\+', $options: 'i' },
+    });
+  });
+
   describe('create', () => {
     it('creates multiple customers with no phone', async () => {
       customerModel.create.mockImplementation(([record]: Array<Record<string, unknown>>) =>
@@ -122,13 +132,13 @@ describe('CustomersService', () => {
       expect((await service.update(sourceId, { name: 'Updated' }, actor)).phone).toBe('01012345678');
       expect((await service.update(sourceId, { phone: '' }, actor)).phone).toBeNull();
     });
-    it('creates with opening balance and writes audit', async () => {
+    it('creates with starting balance and writes audit', async () => {
       const result = await service.create(
         {
           name: 'أحمد',
           phone: '010 1234-5678',
           address: 'القاهرة، مدينة نصر',
-          balance: 100.556,
+          balance: 100.56,
         },
         actor,
       );
@@ -265,6 +275,67 @@ describe('CustomersService', () => {
       await expect(service.merge({ targetId, sourceIds: [sourceId, sourceId2] }, actor)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('actual balance accounting', () => {
+    it('returns actual debt and invoice/payment totals without writing', async () => {
+      const party = makeCustomer({ balance: 30 });
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      salesInvoiceModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([{ total: 100 }]) });
+      paymentModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([{ total: 20 }]) });
+      expect(await service.findOne(sourceId)).toMatchObject({
+        balance: 30,
+        financialSummary: { totalInvoiced: 100, totalPaid: 20 },
+      });
+      expect(party.save).not.toHaveBeenCalled();
+    });
+
+    it('sets current balance and audits adjustment and profile in one transaction', async () => {
+      const party = makeCustomer({ balance: 130 });
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      const oldName = party.name;
+      const command = { balance: -70, name: 'Corrected' };
+      const result = await service.update(sourceId, command, actor);
+      expect(result).toMatchObject({ balance: -70, name: 'Corrected' });
+      expect(customerModel.findOne).toHaveBeenCalledWith({ _id: sourceId, isDeleted: false }, null, { session });
+      expect(party.save).toHaveBeenCalledWith({ session });
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'customer_edited',
+          changes: expect.objectContaining({
+            balance: { old: 130, new: -70 },
+            balanceAdjustment: { old: 0, new: -200 },
+            name: { old: oldName, new: 'Corrected' },
+          }),
+        }),
+        session,
+      );
+    });
+
+    it('does not save or audit an unchanged balance', async () => {
+      const party = makeCustomer({ balance: 30 });
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      const command = { balance: 30 };
+      expect(await service.update(sourceId, command, actor)).toMatchObject({ balance: 30 });
+      expect(party.save).not.toHaveBeenCalled();
+      expect(auditService.log).not.toHaveBeenCalled();
+    });
+
+    it('keeps the current transaction balance during contact-only edits', async () => {
+      const party = makeCustomer({ balance: 300 });
+      customerModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      expect(await service.update(sourceId, { address: 'New address' }, actor)).toMatchObject({ balance: 300 });
+      expect(customerModel.findOne).toHaveBeenCalledWith({ _id: sourceId, isDeleted: false }, null, { session });
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ changes: { address: { old: undefined, new: 'New address' } } }),
+        session,
+      );
+    });
+
+    it('rejects precision loss before creating an account', async () => {
+      await expect(service.create({ name: 'Party', balance: 1.001 }, actor)).rejects.toThrow(BadRequestException);
+      expect(customerModel.create).not.toHaveBeenCalled();
     });
   });
 });

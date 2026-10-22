@@ -17,6 +17,7 @@ import { SupplierPayment, SupplierPaymentDocument } from '../supplier-payments/s
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
 import { CreatePurchaseInvoiceDto, CreatePurchaseInvoiceLineDto } from './dto/request/create-purchase-invoice.dto';
 import { ListPurchaseInvoicesQueryDto } from './dto/request/list-purchase-invoices-query.dto';
+import { UpdatePurchaseInvoiceDto } from './dto/request/update-purchase-invoice.dto';
 import {
   PurchaseInvoiceListResponseDto,
   PurchaseInvoiceResponseDto,
@@ -76,7 +77,18 @@ export class PurchasesService {
     const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
     if (!Number.isFinite(total)) throw new BadRequestException('Invoice total must be finite');
     const paid = roundMoney(dto.paid ?? 0);
-    const existingDebtPayment = roundMoney(dto.existingDebtPayment ?? 0);
+    if (dto.accountPaymentAmount !== undefined && dto.existingDebtPayment !== undefined) {
+      throw new BadRequestException('Supply accountPaymentAmount or existingDebtPayment, not both');
+    }
+    const existingDebtPayment = dto.accountPaymentAmount ?? dto.existingDebtPayment ?? 0;
+    if (
+      dto.accountPaymentAmount === null ||
+      dto.existingDebtPayment === null ||
+      !Number.isFinite(existingDebtPayment) ||
+      existingDebtPayment !== roundMoney(existingDebtPayment)
+    ) {
+      throw new BadRequestException('Account payment must be a finite amount with at most 2 decimal places');
+    }
 
     if (paid < 0) {
       throw new BadRequestException('Paid amount cannot be negative');
@@ -104,9 +116,6 @@ export class PurchasesService {
       }
       if (!lockedSupplier.isActive) {
         throw new BadRequestException('Supplier is inactive');
-      }
-      if (existingDebtPayment > lockedSupplier.amountOwed) {
-        throw new BadRequestException('Payment cannot exceed total due to supplier');
       }
 
       const invoiceNumber = await this.nextInvoiceNumber(session);
@@ -164,6 +173,7 @@ export class PurchasesService {
             {
               supplierId: lockedSupplier._id,
               purchaseInvoiceId: null,
+              sourcePurchaseInvoiceId: created._id,
               amount: existingDebtPayment,
               method: PaymentMethod.CASH,
               notes: dto.notes?.trim() || null,
@@ -182,6 +192,7 @@ export class PurchasesService {
             entityId: debtPayment._id.toString(),
             changes: {
               supplierId: { old: null, new: lockedSupplier.name },
+              sourcePurchaseInvoiceId: { old: null, new: created._id.toString() },
               amount: { old: null, new: existingDebtPayment },
               method: { old: null, new: debtPayment.method },
               amountOwed: { old: roundMoney(oldAmountOwed + remaining), new: lockedSupplier.amountOwed },
@@ -217,8 +228,9 @@ export class PurchasesService {
         session,
       );
 
+      const response = await this.toResponseWithAccountPayment(created, session);
       await session.commitTransaction();
-      return this.toResponseDto(created);
+      return response;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -252,9 +264,10 @@ export class PurchasesService {
     ]);
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
+    const accountPayments = await this.accountPaymentAmounts(docs);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc)),
+      items: docs.map((doc) => this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0)),
       meta: {
         page,
         limit,
@@ -271,7 +284,218 @@ export class PurchasesService {
     if (!invoice) {
       throw new NotFoundException('Purchase invoice not found');
     }
-    return this.toResponseDto(invoice);
+    return this.toResponseWithAccountPayment(invoice);
+  }
+
+  public async update(id: string, dto: UpdatePurchaseInvoiceDto, user: AuthUser): Promise<PurchaseInvoiceResponseDto> {
+    const current = await this.purchaseInvoiceModel.findById(id).exec();
+    if (!current) throw new NotFoundException('Purchase invoice not found');
+    if (current.status !== PurchaseInvoiceStatus.SAVED) {
+      throw new BadRequestException('Only saved purchase invoices can be edited');
+    }
+    if (!dto.lines?.length) throw new BadRequestException('Purchase invoice must have at least one line');
+
+    const itemIds = [...new Set(dto.lines.map((line) => line.itemId))];
+    const items = await this.itemModel.find({ _id: { $in: itemIds }, isDeleted: false }).exec();
+    if (items.length !== itemIds.length) throw new NotFoundException('One or more items were not found');
+    const originalItemIds = new Set(current.lines.map((line) => line.itemId.toString()));
+    const itemById = new Map(items.map((item) => [item._id.toString(), item]));
+    for (const item of items) {
+      if (item.pricingMode === PricingMode.FREE_AMOUNT) {
+        throw new BadRequestException(`Free-amount items cannot be purchased: ${item.name}`);
+      }
+      if (!item.isActive && !originalItemIds.has(item._id.toString())) {
+        throw new BadRequestException(`Item is inactive: ${item.name}`);
+      }
+    }
+    const targetSupplier = await this.supplierModel.findOne({ _id: dto.supplierId, isDeleted: false }).exec();
+    if (!targetSupplier) throw new NotFoundException('Supplier not found');
+    if (!targetSupplier.isActive && dto.supplierId !== current.supplierId.toString()) {
+      throw new BadRequestException('Supplier is inactive');
+    }
+    const builtLines = dto.lines.map((line) => this.buildLine(line, itemById.get(line.itemId)!));
+    const total = roundMoney(builtLines.reduce((sum, row) => sum + row.line.lineTotal, 0));
+    if (!Number.isFinite(total)) throw new BadRequestException('Invoice total must be finite');
+    const paid = roundMoney(dto.paid);
+    if (!Number.isFinite(paid) || paid < 0 || paid > total) {
+      throw new BadRequestException('Paid amount must be between zero and invoice total');
+    }
+    const accountPaymentAmount = dto.accountPaymentAmount ?? 0;
+    if (
+      dto.accountPaymentAmount === null ||
+      !Number.isFinite(accountPaymentAmount) ||
+      accountPaymentAmount < 0 ||
+      accountPaymentAmount !== roundMoney(accountPaymentAmount)
+    ) {
+      throw new BadRequestException('Account payment must be a nonnegative amount with at most 2 decimal places');
+    }
+    const remaining = roundMoney(total - paid);
+    const session = await this.connection.startSession();
+    session.startTransaction();
+    try {
+      const invoice = await this.purchaseInvoiceModel.findById(id).session(session).exec();
+      if (!invoice) throw new NotFoundException('Purchase invoice not found');
+      if (invoice.status !== PurchaseInvoiceStatus.SAVED) {
+        throw new BadRequestException('Only saved purchase invoices can be edited');
+      }
+      const oldSupplierId = invoice.supplierId.toString();
+      const oldItemIds = new Set(invoice.lines.map((line) => line.itemId.toString()));
+      for (const item of items) {
+        if (!item.isActive && !oldItemIds.has(item._id.toString())) {
+          throw new BadRequestException(`Item is inactive: ${item.name}`);
+        }
+      }
+      const supplier = await this.supplierModel.findById(dto.supplierId).session(session).exec();
+      if (!supplier || supplier.isDeleted) throw new NotFoundException('Supplier not found');
+      if (!supplier.isActive && dto.supplierId !== oldSupplierId) {
+        throw new BadRequestException('Supplier is inactive');
+      }
+      const oldSupplier =
+        oldSupplierId === dto.supplierId
+          ? supplier
+          : await this.supplierModel.findById(oldSupplierId).session(session).exec();
+      if (!oldSupplier || oldSupplier.isDeleted) throw new NotFoundException('Original supplier not found');
+
+      for (const line of invoice.lines) {
+        const delta = stockDeltaForLine({
+          pricingMode: resolveLinePricingMode(line),
+          quantity: line.quantity,
+          thicknessM: line.thickness,
+          widthM: line.width,
+          lengthM: line.length,
+        });
+        await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: -delta } }, { session });
+      }
+      for (const row of builtLines) {
+        await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: row.stockDelta } }, { session });
+      }
+
+      const oldRemaining = invoice.remaining;
+      if (oldSupplierId === dto.supplierId) {
+        supplier.amountOwed = roundMoney(supplier.amountOwed + remaining - oldRemaining);
+        await supplier.save({ session });
+      } else {
+        oldSupplier.amountOwed = roundMoney(oldSupplier.amountOwed - oldRemaining);
+        supplier.amountOwed = roundMoney(supplier.amountOwed + remaining);
+        await oldSupplier.save({ session });
+        await supplier.save({ session });
+      }
+
+      const linkedPayment = await this.supplierPaymentModel
+        .findOne({
+          purchaseInvoiceId: invoice._id,
+          reversedAt: null,
+        })
+        .session(session)
+        .exec();
+      if (paid > 0 && linkedPayment) {
+        linkedPayment.amount = paid;
+        linkedPayment.supplierId = supplier._id;
+        linkedPayment.notes = dto.notes?.trim() || null;
+        await linkedPayment.save({ session });
+      } else if (paid > 0) {
+        await this.supplierPaymentModel.create(
+          [
+            {
+              supplierId: supplier._id,
+              purchaseInvoiceId: invoice._id,
+              amount: paid,
+              method: PaymentMethod.CASH,
+              notes: dto.notes?.trim() || null,
+              recordedBy: new Types.ObjectId(user.id),
+              reversedAt: null,
+              reversedBy: null,
+            },
+          ],
+          { session },
+        );
+      } else if (linkedPayment) {
+        linkedPayment.reversedAt = new Date();
+        linkedPayment.reversedBy = new Types.ObjectId(user.id);
+        await linkedPayment.save({ session });
+      }
+
+      if (accountPaymentAmount > 0) {
+        if (!supplier.isActive) throw new BadRequestException('Supplier is inactive');
+        const oldAmountOwed = supplier.amountOwed;
+        supplier.amountOwed = roundMoney(oldAmountOwed - accountPaymentAmount);
+        await supplier.save({ session });
+        const [payment] = await this.supplierPaymentModel.create(
+          [
+            {
+              supplierId: supplier._id,
+              purchaseInvoiceId: null,
+              sourcePurchaseInvoiceId: invoice._id,
+              amount: accountPaymentAmount,
+              method: PaymentMethod.CASH,
+              notes: dto.notes?.trim() || null,
+              recordedBy: new Types.ObjectId(user.id),
+              reversedAt: null,
+              reversedBy: null,
+            },
+          ],
+          { session },
+        );
+        await this.auditService.log(
+          {
+            userId: user.id,
+            action: 'supplier_payment_recorded',
+            entityType: 'SupplierPayment',
+            entityId: payment._id.toString(),
+            changes: {
+              supplierId: { old: null, new: supplier.name },
+              sourcePurchaseInvoiceId: { old: null, new: invoice._id.toString() },
+              amount: { old: null, new: accountPaymentAmount },
+              method: { old: null, new: payment.method },
+              amountOwed: { old: oldAmountOwed, new: supplier.amountOwed },
+            },
+            refCollection: null,
+            refId: null,
+            summary: `Payment of ${accountPaymentAmount} EGP recorded for supplier: ${supplier.name}`,
+          },
+          session,
+        );
+      }
+      const oldTotal = invoice.total;
+      const oldPaid = invoice.paid;
+      const oldNotes = invoice.notes;
+      const oldLineCount = invoice.lines.length;
+      invoice.supplierId = supplier._id;
+      invoice.lines = builtLines.map((row) => row.line);
+      invoice.total = total;
+      invoice.paid = paid;
+      invoice.remaining = remaining;
+      invoice.notes = dto.notes?.trim() || null;
+      await invoice.save({ session });
+      await this.auditService.log(
+        {
+          userId: user.id,
+          action: 'purchase_updated',
+          entityType: 'PurchaseInvoice',
+          entityId: invoice._id.toString(),
+          changes: {
+            supplierId: { old: oldSupplier.name, new: supplier.name },
+            total: { old: oldTotal, new: total },
+            paid: { old: oldPaid, new: paid },
+            remaining: { old: oldRemaining, new: remaining },
+            notes: { old: oldNotes, new: invoice.notes },
+            lines: { old: oldLineCount, new: invoice.lines.length },
+          },
+          refCollection: null,
+          refId: null,
+          summary: `Purchase invoice updated: ${invoice.invoiceNumber}`,
+        },
+        session,
+      );
+      const response = await this.toResponseWithAccountPayment(invoice, session);
+      await session.commitTransaction();
+      return response;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 
   public async cancel(id: string, user: AuthUser): Promise<PurchaseInvoiceResponseDto> {
@@ -368,8 +592,9 @@ export class PurchasesService {
         session,
       );
 
+      const response = await this.toResponseWithAccountPayment(lockedInvoice, session);
       await session.commitTransaction();
-      return this.toResponseDto(lockedInvoice);
+      return response;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -512,7 +737,37 @@ export class PurchasesService {
     return filter;
   }
 
-  private toResponseDto(invoice: PurchaseInvoiceDocument): PurchaseInvoiceResponseDto {
+  private async accountPaymentAmounts(
+    invoices: PurchaseInvoiceDocument[],
+    session?: ClientSession,
+  ): Promise<Map<string, number>> {
+    const accounts = invoices.filter((invoice) => invoice.supplierId);
+    if (!accounts.length) return new Map();
+    const rows = await this.supplierPaymentModel.aggregate<{ _id: Types.ObjectId; amount: number }>(
+      [
+        {
+          $match: {
+            reversedAt: null,
+            purchaseInvoiceId: null,
+            $or: accounts.map((invoice) => ({ sourcePurchaseInvoiceId: invoice._id, supplierId: invoice.supplierId })),
+          },
+        },
+        { $group: { _id: '$sourcePurchaseInvoiceId', amount: { $sum: '$amount' } } },
+      ],
+      { session },
+    );
+    return new Map(rows.map((row) => [row._id.toString(), roundMoney(row.amount)]));
+  }
+
+  private async toResponseWithAccountPayment(
+    invoice: PurchaseInvoiceDocument,
+    session?: ClientSession,
+  ): Promise<PurchaseInvoiceResponseDto> {
+    const amounts = await this.accountPaymentAmounts([invoice], session);
+    return this.toResponseDto(invoice, amounts.get(invoice._id.toString()) ?? 0);
+  }
+
+  private toResponseDto(invoice: PurchaseInvoiceDocument, accountPaymentAmount = 0): PurchaseInvoiceResponseDto {
     return {
       id: invoice._id.toString(),
       invoiceNumber: invoice.invoiceNumber,
@@ -530,6 +785,7 @@ export class PurchasesService {
       })),
       total: invoice.total,
       paid: invoice.paid,
+      accountPaymentAmount,
       remaining: invoice.remaining,
       status: invoice.status,
       notes: invoice.notes ?? null,

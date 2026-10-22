@@ -1,3 +1,4 @@
+import { SupplierPayment } from '../supplier-payments/schemas/supplier-payment.schema';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
@@ -19,8 +20,10 @@ describe('SuppliersService', () => {
     aggregate: jest.Mock;
   };
   let purchaseInvoiceModel: {
+    aggregate: jest.Mock;
     updateMany: jest.Mock;
   };
+  let paymentModel: { aggregate: jest.Mock; updateMany: jest.Mock };
   let auditService: { log: jest.Mock };
   let connection: { startSession: jest.Mock };
   let session: {
@@ -59,7 +62,12 @@ describe('SuppliersService', () => {
       endSession: jest.fn(),
     };
 
+    paymentModel = {
+      updateMany: jest.fn(),
+      aggregate: jest.fn().mockReturnValue({ session: jest.fn().mockReturnThis(), exec: () => Promise.resolve([]) }),
+    };
     purchaseInvoiceModel = {
+      aggregate: jest.fn().mockReturnValue({ session: jest.fn().mockReturnThis(), exec: () => Promise.resolve([]) }),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
     };
 
@@ -90,6 +98,7 @@ describe('SuppliersService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SuppliersService,
+        { provide: getModelToken(SupplierPayment.name), useValue: paymentModel },
         { provide: getModelToken(Supplier.name), useValue: supplierModel },
         { provide: getModelToken(PurchaseInvoice.name), useValue: purchaseInvoiceModel },
         { provide: getConnectionToken(), useValue: connection },
@@ -106,8 +115,8 @@ describe('SuppliersService', () => {
   });
 
   describe('create', () => {
-    it('creates with opening amountOwed and optional null phone', async () => {
-      const result = await service.create({ name: 'مورد', address: 'الإسكندرية', amountOwed: 200.444 }, actor);
+    it('creates with starting amountOwed and optional null phone', async () => {
+      const result = await service.create({ name: 'مورد', address: 'الإسكندرية', amountOwed: 200.44 }, actor);
 
       expect(supplierModel.create).toHaveBeenCalledWith(
         [
@@ -228,6 +237,67 @@ describe('SuppliersService', () => {
       });
 
       await expect(service.merge({ targetId, sourceIds: [sourceId] }, actor)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('actual balance accounting', () => {
+    it('returns actual debt and invoice/payment totals without writing', async () => {
+      const party = makeSupplier({ amountOwed: 30 });
+      supplierModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      purchaseInvoiceModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([{ total: 100 }]) });
+      paymentModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([{ total: 20 }]) });
+      expect(await service.findOne(sourceId)).toMatchObject({
+        amountOwed: 30,
+        financialSummary: { totalInvoiced: 100, totalPaid: 20 },
+      });
+      expect(party.save).not.toHaveBeenCalled();
+    });
+
+    it('sets current balance and audits adjustment and profile in one transaction', async () => {
+      const party = makeSupplier({ amountOwed: 130 });
+      supplierModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      const oldName = party.name;
+      const command = { amountOwed: -70, name: 'Corrected' };
+      const result = await service.update(sourceId, command, actor);
+      expect(result).toMatchObject({ amountOwed: -70, name: 'Corrected' });
+      expect(supplierModel.findOne).toHaveBeenCalledWith({ _id: sourceId, isDeleted: false }, null, { session });
+      expect(party.save).toHaveBeenCalledWith({ session });
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'supplier_edited',
+          changes: expect.objectContaining({
+            amountOwed: { old: 130, new: -70 },
+            balanceAdjustment: { old: 0, new: -200 },
+            name: { old: oldName, new: 'Corrected' },
+          }),
+        }),
+        session,
+      );
+    });
+
+    it('does not save or audit an unchanged balance', async () => {
+      const party = makeSupplier({ amountOwed: 30 });
+      supplierModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      const command = { amountOwed: 30 };
+      expect(await service.update(sourceId, command, actor)).toMatchObject({ amountOwed: 30 });
+      expect(party.save).not.toHaveBeenCalled();
+      expect(auditService.log).not.toHaveBeenCalled();
+    });
+
+    it('keeps the current transaction balance during contact-only edits', async () => {
+      const party = makeSupplier({ amountOwed: 300 });
+      supplierModel.findOne.mockReturnValue({ exec: () => Promise.resolve(party) });
+      expect(await service.update(sourceId, { address: 'New address' }, actor)).toMatchObject({ amountOwed: 300 });
+      expect(supplierModel.findOne).toHaveBeenCalledWith({ _id: sourceId, isDeleted: false }, null, { session });
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ changes: { address: { old: undefined, new: 'New address' } } }),
+        session,
+      );
+    });
+
+    it('rejects precision loss before creating an account', async () => {
+      await expect(service.create({ name: 'Party', amountOwed: 1.001 }, actor)).rejects.toThrow(BadRequestException);
+      expect(supplierModel.create).not.toHaveBeenCalled();
     });
   });
 });

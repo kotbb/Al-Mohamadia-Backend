@@ -24,6 +24,7 @@ export class SalesInvoiceResponseDto {
   total: number;
   discount: number;
   paid: number;
+  accountPaymentAmount: number;
   remaining: number;
   status: SalesInvoiceStatus;
   createdBy: string;

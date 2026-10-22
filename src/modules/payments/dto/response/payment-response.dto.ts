@@ -5,6 +5,7 @@ export class PaymentResponseDto {
   customerId: string | null;
   customerName?: string | null;
   invoiceId: string | null;
+  sourceInvoiceId?: string | null;
   invoiceNumber?: string | null;
   amount: number;
   method: PaymentMethod;

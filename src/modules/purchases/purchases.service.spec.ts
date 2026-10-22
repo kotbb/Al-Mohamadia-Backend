@@ -38,7 +38,7 @@ describe('PurchasesService', () => {
     updateOne: jest.Mock;
   };
   let auditService: { log: jest.Mock };
-  let supplierPaymentModel: { create: jest.Mock; updateMany: jest.Mock };
+  let supplierPaymentModel: { aggregate: jest.Mock; create: jest.Mock; updateMany: jest.Mock; findOne: jest.Mock };
   let connection: { startSession: jest.Mock };
   let session: {
     startTransaction: jest.Mock;
@@ -146,8 +146,10 @@ describe('PurchasesService', () => {
     };
 
     supplierPaymentModel = {
+      aggregate: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+      findOne: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -373,18 +375,18 @@ describe('PurchasesService', () => {
           supplierId,
           lines: [{ itemId: itemIdPiece, quantity: 2, unitCost: 380 }],
           paid: 760,
-          existingDebtPayment: 9983,
+          accountPaymentAmount: 10083,
         },
         actor,
       );
 
       expect(result.paid).toBe(760);
       expect(result.remaining).toBe(0);
-      expect(supplier.amountOwed).toBe(0);
+      expect(supplier.amountOwed).toBe(-100);
       expect(supplierPaymentModel.create).toHaveBeenCalledTimes(2);
       expect(supplierPaymentModel.create).toHaveBeenNthCalledWith(
         2,
-        [expect.objectContaining({ amount: 9983, purchaseInvoiceId: null })],
+        [expect.objectContaining({ amount: 10083, purchaseInvoiceId: null })],
         { session },
       );
       expect(auditService.log).toHaveBeenCalledWith(
@@ -394,23 +396,22 @@ describe('PurchasesService', () => {
       expect(session.commitTransaction).toHaveBeenCalled();
     });
 
-    it('rejects a payment beyond the supplier debt and rolls back', async () => {
-      supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier({ amountOwed: 100 })));
+    it('rejects supplying both account payment aliases', async () => {
+      supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));
       itemModel.find.mockReturnValue(mockQuery([makePieceItem()]));
-
       await expect(
         service.create(
           {
             supplierId,
             lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 100 }],
             paid: 100,
-            existingDebtPayment: 101,
+            existingDebtPayment: 0,
+            accountPaymentAmount: 1,
           },
           actor,
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('not both');
       expect(purchaseInvoiceModel.create).not.toHaveBeenCalled();
-      expect(session.abortTransaction).toHaveBeenCalled();
     });
 
     it('fails if no lines are provided', async () => {
@@ -507,6 +508,195 @@ describe('PurchasesService', () => {
       };
 
       await expect(service.create(dto, actor)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('update', () => {
+    it.each([0, 700])(
+      'moves invoice debt and creates only a newly requested account payment of %s',
+      async (accountPaymentAmount) => {
+        const nextSupplierId = '507f1f77bcf86cd799439055';
+        const oldSupplier = makeSupplier({ amountOwed: 700 });
+        const newSupplier = makeSupplier({ _id: { toString: () => nextSupplierId }, amountOwed: 80, isActive: true });
+        const invoice = {
+          _id: { toString: () => purchaseId },
+          invoiceNumber: 'PUR-0042',
+          supplierId: { toString: () => supplierId },
+          lines: [
+            {
+              itemId: { toString: () => itemIdPiece },
+              quantity: 2,
+              pricingModeSnapshot: PricingMode.PER_PIECE,
+              width: null,
+              length: null,
+              thickness: null,
+              unitCost: 100,
+              lineTotal: 200,
+              note: null,
+            },
+          ],
+          total: 200,
+          paid: 50,
+          remaining: 150,
+          status: PurchaseInvoiceStatus.SAVED,
+          notes: null,
+          createdBy: { toString: () => actor.id },
+          save: jest.fn().mockResolvedValue(undefined),
+          get: () => new Date(),
+        };
+        const linkedPayment = {
+          amount: 50,
+          supplierId: invoice.supplierId,
+          notes: null,
+          save: jest.fn().mockResolvedValue(undefined),
+        };
+        purchaseInvoiceModel.findById.mockReturnValue(mockQuery(invoice));
+        supplierModel.findOne.mockReturnValue(mockQuery(newSupplier));
+        supplierModel.findById.mockImplementation((id: string) =>
+          mockQuery(id === supplierId ? oldSupplier : newSupplier),
+        );
+        itemModel.find.mockReturnValue(mockQuery([makePieceItem({ isActive: false })]));
+        supplierPaymentModel.findOne.mockReturnValue(mockQuery(linkedPayment));
+
+        supplierPaymentModel.create.mockResolvedValue([{ _id: { toString: () => purchaseId }, method: 'cash' }]);
+        const result = await service.update(
+          purchaseId,
+          {
+            supplierId: nextSupplierId,
+            lines: [{ itemId: itemIdPiece, quantity: 3, unitCost: 100 }],
+            paid: 100,
+            notes: 'Edited',
+            accountPaymentAmount,
+          },
+          actor,
+        );
+
+        expect(result.remaining).toBe(200);
+        expect(oldSupplier.amountOwed).toBe(550);
+        expect(newSupplier.amountOwed).toBe(280 - accountPaymentAmount);
+        expect(supplierPaymentModel.create).toHaveBeenCalledTimes(accountPaymentAmount > 0 ? 1 : 0);
+        expect(linkedPayment.amount).toBe(100);
+        expect(linkedPayment.supplierId.toString()).toBe(nextSupplierId);
+        expect(itemModel.updateOne).toHaveBeenCalledTimes(2);
+        expect(supplierPaymentModel.updateMany).not.toHaveBeenCalled();
+        expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_updated' }), session);
+        expect(session.commitTransaction).toHaveBeenCalled();
+      },
+    );
+
+    it('rejects editing a cancelled invoice', async () => {
+      purchaseInvoiceModel.findById.mockReturnValue(mockQuery({ status: PurchaseInvoiceStatus.CANCELLED }));
+      await expect(
+        service.update(
+          purchaseId,
+          {
+            supplierId,
+            lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 100 }],
+            paid: 0,
+          },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('uses the current cubic mode, adjusts the same supplier by the debt delta, and reverses a zeroed linked payment', async () => {
+      const supplier = makeSupplier({ amountOwed: 700, isActive: false });
+      const invoice = {
+        _id: { toString: () => purchaseId },
+        invoiceNumber: 'PUR-0042',
+        supplierId: { toString: () => supplierId },
+        lines: [
+          {
+            itemId: { toString: () => itemIdPiece },
+            quantity: 2,
+            pricingModeSnapshot: PricingMode.PER_PIECE,
+            width: 0.1,
+            length: 1,
+            thickness: 0.1,
+            unitCost: 100,
+            lineTotal: 200,
+            note: null,
+          },
+        ],
+        total: 200,
+        paid: 50,
+        remaining: 150,
+        status: PurchaseInvoiceStatus.SAVED,
+        notes: null,
+        createdBy: { toString: () => actor.id },
+        save: jest.fn().mockResolvedValue(undefined),
+        get: () => new Date(),
+      };
+      const payment = {
+        amount: 50,
+        reversedAt: null as Date | null,
+        reversedBy: null,
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      purchaseInvoiceModel.findById.mockReturnValue(mockQuery(invoice));
+      supplierModel.findOne.mockReturnValue(mockQuery(supplier));
+      supplierModel.findById.mockReturnValue(mockQuery(supplier));
+      itemModel.find.mockReturnValue(
+        mockQuery([makePieceItem({ isActive: false, pricingMode: PricingMode.PER_CUBIC_METER })]),
+      );
+      supplierPaymentModel.findOne.mockReturnValue(mockQuery(payment));
+
+      const result = await service.update(
+        purchaseId,
+        {
+          supplierId,
+          lines: [{ itemId: itemIdPiece, quantity: 3, unitCost: 1000, thickness: 0.1, width: 0.1, length: 1 }],
+          paid: 0,
+        },
+        actor,
+      );
+
+      expect(result.total).toBe(30);
+      expect(result.remaining).toBe(30);
+      expect(supplier.amountOwed).toBe(580);
+      expect(itemModel.updateOne).toHaveBeenCalledWith(
+        { _id: itemIdPiece },
+        { $inc: { stockQuantity: 0.03 } },
+        { session },
+      );
+      expect(payment.reversedAt).toBeInstanceOf(Date);
+      expect(session.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('rejects an inactive supplier or item newly selected on edit', async () => {
+      const invoice = {
+        status: PurchaseInvoiceStatus.SAVED,
+        supplierId: { toString: () => supplierId },
+        lines: [{ itemId: { toString: () => itemIdPiece } }],
+      };
+      purchaseInvoiceModel.findById.mockReturnValue(mockQuery(invoice));
+      itemModel.find.mockReturnValue(mockQuery([makeCubicItem({ isActive: false })]));
+      await expect(
+        service.update(
+          purchaseId,
+          {
+            supplierId,
+            lines: [{ itemId: itemIdCubic, quantity: 1, unitCost: 100, thickness: 1, width: 1, length: 1 }],
+            paid: 0,
+          },
+          actor,
+        ),
+      ).rejects.toThrow('Item is inactive');
+      itemModel.find.mockReturnValue(mockQuery([makePieceItem()]));
+      supplierModel.findOne.mockReturnValue(
+        mockQuery(makeSupplier({ _id: { toString: () => '507f1f77bcf86cd799439055' }, isActive: false })),
+      );
+      await expect(
+        service.update(
+          purchaseId,
+          {
+            supplierId: '507f1f77bcf86cd799439055',
+            lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 100 }],
+            paid: 0,
+          },
+          actor,
+        ),
+      ).rejects.toThrow('Supplier is inactive');
     });
   });
 

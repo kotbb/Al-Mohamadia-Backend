@@ -111,11 +111,28 @@ export class SalesInvoicesService {
       throw new BadRequestException('Paid amount cannot exceed net total');
     }
 
+    const accountPaymentAmount = dto.accountPaymentAmount ?? 0;
+    if (
+      dto.accountPaymentAmount === null ||
+      !Number.isFinite(accountPaymentAmount) ||
+      accountPaymentAmount < 0 ||
+      accountPaymentAmount !== roundMoney(accountPaymentAmount)
+    ) {
+      throw new BadRequestException('Account payment must be a nonnegative amount with at most 2 decimal places');
+    }
+    if (dto.type === SalesInvoiceType.CASH_SALE && accountPaymentAmount > 0) {
+      throw new BadRequestException('Cash sale cannot include an account payment');
+    }
     const remaining = roundMoney(net - paid);
 
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      if (customer) {
+        customer = await this.customerModel.findById(customer._id).session(session).exec();
+        if (!customer || customer.isDeleted) throw new NotFoundException('Customer not found');
+        if (!customer.isActive) throw new BadRequestException('Customer is inactive');
+      }
       const invoiceNumber = await this.nextInvoiceNumber(session);
       const customerId = dto.type === SalesInvoiceType.CUSTOMER_SALE && customer ? customer._id : null;
 
@@ -189,8 +206,12 @@ export class SalesInvoicesService {
         session,
       );
 
+      if (accountPaymentAmount > 0 && customerId) {
+        await this.recordAccountPayment(customerId, created._id, accountPaymentAmount, dto, user, session);
+      }
+      const response = await this.toResponseWithAccountPayment(created, session);
       await session.commitTransaction();
-      return this.toResponseDto(created);
+      return response;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -225,9 +246,10 @@ export class SalesInvoicesService {
     ]);
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
+    const accountPayments = await this.accountPaymentAmounts(docs);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc)),
+      items: docs.map((doc) => this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0)),
       meta: { page, limit, total },
       summary: { totalAmount },
     };
@@ -236,7 +258,7 @@ export class SalesInvoicesService {
   // Get a single sales invoice
   public async findOne(id: string): Promise<SalesInvoiceResponseDto> {
     const invoice = await this.requireInvoiceById(id);
-    return this.toResponseDto(invoice);
+    return this.toResponseWithAccountPayment(invoice);
   }
 
   // Cancel a sales invoice
@@ -318,8 +340,9 @@ export class SalesInvoicesService {
         session,
       );
 
+      const response = await this.toResponseWithAccountPayment(invoice, session);
       await session.commitTransaction();
-      return this.toResponseDto(invoice);
+      return response;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -336,12 +359,13 @@ export class SalesInvoicesService {
     }
 
     const itemIds = Array.from(new Set(dto.lines.map((l) => l.itemId)));
-    const items = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
+    const items = await this.itemModel.find({ _id: { $in: itemIds }, isDeleted: false }).exec();
     if (items.length !== itemIds.length) {
       throw new NotFoundException('One or more items not found');
     }
+    const originalItemIds = new Set(invoice.lines.map((line) => line.itemId.toString()));
     for (const item of items) {
-      if (!item.isActive) {
+      if (!item.isActive && !originalItemIds.has(item._id.toString())) {
         throw new BadRequestException(`Item is inactive: ${item.name}`);
       }
     }
@@ -356,7 +380,7 @@ export class SalesInvoicesService {
       if (!customer) {
         throw new NotFoundException('Customer not found');
       }
-      if (!customer.isActive) {
+      if (!customer.isActive && customer._id.toString() !== invoice.customerId?.toString()) {
         throw new BadRequestException('Customer is inactive');
       }
     }
@@ -384,6 +408,18 @@ export class SalesInvoicesService {
       throw new BadRequestException('Paid amount cannot exceed net total');
     }
 
+    const accountPaymentAmount = dto.accountPaymentAmount ?? 0;
+    if (
+      dto.accountPaymentAmount === null ||
+      !Number.isFinite(accountPaymentAmount) ||
+      accountPaymentAmount < 0 ||
+      accountPaymentAmount !== roundMoney(accountPaymentAmount)
+    ) {
+      throw new BadRequestException('Account payment must be a nonnegative amount with at most 2 decimal places');
+    }
+    if (dto.type === SalesInvoiceType.CASH_SALE && accountPaymentAmount > 0) {
+      throw new BadRequestException('Cash sale cannot include an account payment');
+    }
     const remaining = roundMoney(net - paid);
 
     const session = await this.connection.startSession();
@@ -539,8 +575,12 @@ export class SalesInvoicesService {
         session,
       );
 
+      if (accountPaymentAmount > 0 && newCustomerId) {
+        await this.recordAccountPayment(newCustomerId, invoice._id, accountPaymentAmount, dto, user, session);
+      }
+      const response = await this.toResponseWithAccountPayment(invoice, session);
       await session.commitTransaction();
-      return this.toResponseDto(invoice);
+      return response;
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -642,6 +682,57 @@ export class SalesInvoicesService {
 
   // ----------------- Helper Methods -----------------
 
+  private async recordAccountPayment(
+    customerId: Types.ObjectId,
+    sourceInvoiceId: Types.ObjectId,
+    amount: number,
+    dto: CreateSalesInvoiceDto | UpdateSalesInvoiceDto,
+    user: AuthUser,
+    session: ClientSession,
+  ): Promise<void> {
+    const customer = await this.customerModel.findById(customerId).session(session).exec();
+    if (!customer || customer.isDeleted) throw new NotFoundException('Customer not found');
+    if (!customer.isActive) throw new BadRequestException('Customer is inactive');
+    const oldBalance = customer.balance;
+    customer.balance = roundMoney(oldBalance - amount);
+    await customer.save({ session });
+    const [payment] = await this.paymentModel.create(
+      [
+        {
+          customerId,
+          invoiceId: null,
+          sourceInvoiceId,
+          amount,
+          method: dto.paymentMethod ?? PaymentMethod.CASH,
+          notes: dto.paymentNotes?.trim() || null,
+          recordedBy: new Types.ObjectId(user.id),
+          reversedAt: null,
+          reversedBy: null,
+        },
+      ],
+      { session },
+    );
+    await this.auditService.log(
+      {
+        userId: user.id,
+        action: 'payment_recorded',
+        entityType: 'Payment',
+        entityId: payment._id.toString(),
+        changes: {
+          customerId: { old: null, new: customer.name },
+          sourceInvoiceId: { old: null, new: sourceInvoiceId.toString() },
+          amount: { old: null, new: amount },
+          method: { old: null, new: payment.method },
+          balance: { old: oldBalance, new: customer.balance },
+        },
+        refCollection: null,
+        refId: null,
+        summary: `Payment of ${amount} EGP recorded for customer: ${customer.name}`,
+      },
+      session,
+    );
+  }
+
   private async toReceiptDto(invoice: SalesInvoiceDocument): Promise<PublicInvoiceResponseDto> {
     const itemIds = invoice.lines.map((line) => line.itemId);
     const items = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
@@ -654,6 +745,7 @@ export class SalesInvoicesService {
     }
 
     const createdAt = (invoice.get('createdAt') as Date | undefined) ?? new Date();
+    const accountPaymentAmount = (await this.accountPaymentAmounts([invoice])).get(invoice._id.toString()) ?? 0;
 
     return {
       invoiceNumber: invoice.invoiceNumber,
@@ -678,6 +770,7 @@ export class SalesInvoicesService {
       total: invoice.total,
       discount: invoice.discount,
       paid: invoice.paid,
+      accountPaymentAmount,
       remaining: invoice.remaining,
     };
   }
@@ -789,6 +882,10 @@ export class SalesInvoicesService {
   private async buildListFilter(query: ListSalesInvoicesQueryDto): Promise<SalesInvoiceListFilter> {
     const filter: SalesInvoiceListFilter = {};
 
+    if (query.customerId !== undefined) {
+      if (!Types.ObjectId.isValid(query.customerId)) throw new BadRequestException('Invalid customerId');
+      filter.customerId = new Types.ObjectId(query.customerId);
+    }
     if (query.status) {
       filter.status = query.status;
     }
@@ -831,7 +928,39 @@ export class SalesInvoicesService {
     return filter;
   }
 
-  private toResponseDto(invoice: SalesInvoiceDocument): SalesInvoiceResponseDto {
+  private async accountPaymentAmounts(
+    invoices: SalesInvoiceDocument[],
+    session?: ClientSession,
+  ): Promise<Map<string, number>> {
+    const accounts = invoices.filter(
+      (invoice) => invoice.customerId && invoice.type === SalesInvoiceType.CUSTOMER_SALE,
+    );
+    if (!accounts.length) return new Map();
+    const rows = await this.paymentModel.aggregate<{ _id: Types.ObjectId; amount: number }>(
+      [
+        {
+          $match: {
+            reversedAt: null,
+            invoiceId: null,
+            $or: accounts.map((invoice) => ({ sourceInvoiceId: invoice._id, customerId: invoice.customerId })),
+          },
+        },
+        { $group: { _id: '$sourceInvoiceId', amount: { $sum: '$amount' } } },
+      ],
+      { session },
+    );
+    return new Map(rows.map((row) => [row._id.toString(), roundMoney(row.amount)]));
+  }
+
+  private async toResponseWithAccountPayment(
+    invoice: SalesInvoiceDocument,
+    session?: ClientSession,
+  ): Promise<SalesInvoiceResponseDto> {
+    const amounts = await this.accountPaymentAmounts([invoice], session);
+    return this.toResponseDto(invoice, amounts.get(invoice._id.toString()) ?? 0);
+  }
+
+  private toResponseDto(invoice: SalesInvoiceDocument, accountPaymentAmount = 0): SalesInvoiceResponseDto {
     return {
       id: invoice._id.toString(),
       invoiceNumber: invoice.invoiceNumber,
@@ -852,6 +981,7 @@ export class SalesInvoicesService {
       total: invoice.total,
       discount: invoice.discount,
       paid: invoice.paid,
+      accountPaymentAmount,
       remaining: invoice.remaining,
       status: invoice.status,
       createdBy: invoice.createdBy.toString(),

@@ -10,7 +10,10 @@ import { PaymentStatusFilter } from '../payments/enums/payment-status-filter.enu
 import { PaymentTypeFilter } from '../payments/enums/payment-type-filter.enum';
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
 import { ListSupplierPaymentsQueryDto } from './dto/request/list-supplier-payments-query.dto';
-import { SupplierPaymentListResponseDto, SupplierPaymentResponseDto } from './dto/response/supplier-payment-response.dto';
+import {
+  SupplierPaymentListResponseDto,
+  SupplierPaymentResponseDto,
+} from './dto/response/supplier-payment-response.dto';
 import { RecordSupplierPaymentDto } from './dto/request/record-supplier-payment.dto';
 import { SupplierPayment, SupplierPaymentDocument } from './schemas/supplier-payment.schema';
 import { SupplierPaymentListFilter } from './types/supplier-payment-list-filter.type';
@@ -38,19 +41,9 @@ export class SupplierPaymentsService {
       throw new BadRequestException('Supplier is inactive');
     }
 
-    if (supplier.amountOwed <= 0) {
-      throw new BadRequestException('Supplier has no outstanding debt owed');
-    }
-
     const amount = roundMoney(dto.amount);
-    if (amount <= 0) {
+    if (!Number.isFinite(dto.amount) || dto.amount !== amount || amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than zero');
-    }
-
-    if (amount > supplier.amountOwed) {
-      throw new BadRequestException(
-        `Payment amount (${amount} ج.م) cannot exceed supplier debt owed (${supplier.amountOwed} ج.م)`,
-      );
     }
 
     const session = await this.connection.startSession();
@@ -68,16 +61,6 @@ export class SupplierPaymentsService {
 
       if (!lockedSupplier.isActive) {
         throw new BadRequestException('Supplier is inactive');
-      }
-
-      if (lockedSupplier.amountOwed <= 0) {
-        throw new BadRequestException('Supplier has no outstanding debt owed');
-      }
-
-      if (amount > lockedSupplier.amountOwed) {
-        throw new BadRequestException(
-          `Payment amount (${amount} ج.م) cannot exceed supplier debt owed (${lockedSupplier.amountOwed} ج.م)`,
-        );
       }
 
       const oldAmountOwed = lockedSupplier.amountOwed;
@@ -317,6 +300,7 @@ export class SupplierPaymentsService {
       id: payment._id.toString(),
       supplierId: payment.supplierId.toString(),
       purchaseInvoiceId: payment.purchaseInvoiceId ? payment.purchaseInvoiceId.toString() : null,
+      sourcePurchaseInvoiceId: payment.sourcePurchaseInvoiceId?.toString() ?? null,
       amount: roundMoney(payment.amount),
       method: payment.method ?? PaymentMethod.CASH,
       notes: payment.notes ?? null,

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
 import { CreateCustomerDto } from './dto/request/create-customer.dto';
 import { UpdateCustomerDto } from './dto/request/update-customer.dto';
@@ -45,7 +45,10 @@ export class CustomersService {
       if (existing) throw new ConflictException('Customer phone already exists');
     }
 
-    const balance = roundMoney(dto.balance ?? 0);
+    const balance = dto.balance ?? 0;
+    if (dto.balance === null || !Number.isFinite(balance) || balance !== roundMoney(balance)) {
+      throw new BadRequestException('balance must be a finite amount with at most 2 decimal places');
+    }
     const address = normalizeOptionalAddress(dto.address);
 
     const session = await this.connection.startSession();
@@ -124,63 +127,75 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
-    return this.toResponseDto(customer);
+    return this.toDetailResponse(customer);
   }
 
   public async update(id: string, dto: UpdateCustomerDto, user: AuthUser): Promise<CustomerResponseDto> {
-    const customer = await this.customerModel.findOne({ _id: id, isDeleted: false }).exec();
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
-
-    const changes: Record<string, { old: unknown; new: unknown }> = {};
-
-    if (dto.name !== undefined) {
-      const name = dto.name.trim();
-      if (name !== customer.name) {
-        changes.name = { old: customer.name, new: name };
-        customer.name = name;
-      }
-    }
-
-    if (dto.phone !== undefined) {
-      const phone = normalizeOptionalPhone(dto.phone);
-      if (phone !== customer.phone) {
-        assertEgyptianMobile(phone);
-        if (phone) {
-          const existing = await this.customerModel
-            .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: customer._id } })
-            .lean()
-            .exec();
-          if (existing) {
-            throw new ConflictException('Customer phone already exists');
-          }
-        }
-        changes.phone = { old: customer.phone, new: phone };
-        customer.phone = phone;
-      }
-    }
-
-    if (dto.address !== undefined) {
-      const address = normalizeOptionalAddress(dto.address);
-      if (address !== customer.address) {
-        changes.address = { old: customer.address, new: address };
-        customer.address = address;
-      }
-    }
-
-    if (dto.isActive !== undefined && dto.isActive !== customer.isActive) {
-      changes.isActive = { old: customer.isActive, new: dto.isActive };
-      customer.isActive = dto.isActive;
-    }
-
-    if (Object.keys(changes).length === 0) {
-      return this.toResponseDto(customer);
-    }
-
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const customer = await this.customerModel.findOne({ _id: id, isDeleted: false }, null, { session }).exec();
+      if (!customer) {
+        throw new NotFoundException('Customer not found');
+      }
+
+      const changes: Record<string, { old: unknown; new: unknown }> = {};
+      if (dto.balance !== undefined) {
+        const newBalance = dto.balance;
+        if (!Number.isFinite(newBalance) || newBalance !== roundMoney(newBalance)) {
+          throw new BadRequestException('balance must be a finite amount with at most 2 decimal places');
+        }
+        const oldBalance = customer.balance;
+        if (oldBalance !== newBalance) {
+          customer.balance = newBalance;
+          changes.balance = { old: oldBalance, new: newBalance };
+          changes.balanceAdjustment = { old: 0, new: roundMoney(newBalance - oldBalance) };
+        }
+      }
+
+      if (dto.name !== undefined) {
+        const name = dto.name.trim();
+        if (name !== customer.name) {
+          changes.name = { old: customer.name, new: name };
+          customer.name = name;
+        }
+      }
+
+      if (dto.phone !== undefined) {
+        const phone = normalizeOptionalPhone(dto.phone);
+        if (phone !== customer.phone) {
+          assertEgyptianMobile(phone);
+          if (phone) {
+            const existing = await this.customerModel
+              .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: customer._id } })
+              .lean()
+              .exec();
+            if (existing) {
+              throw new ConflictException('Customer phone already exists');
+            }
+          }
+          changes.phone = { old: customer.phone, new: phone };
+          customer.phone = phone;
+        }
+      }
+
+      if (dto.address !== undefined) {
+        const address = normalizeOptionalAddress(dto.address);
+        if (address !== customer.address) {
+          changes.address = { old: customer.address, new: address };
+          customer.address = address;
+        }
+      }
+
+      if (dto.isActive !== undefined && dto.isActive !== customer.isActive) {
+        changes.isActive = { old: customer.isActive, new: dto.isActive };
+        customer.isActive = dto.isActive;
+      }
+
+      if (Object.keys(changes).length === 0) {
+        await session.commitTransaction();
+        return this.toResponseDto(customer);
+      }
       await customer.save({ session });
       await this.auditService.log(
         {
@@ -255,68 +270,72 @@ export class CustomersService {
       throw new BadRequestException('Source customers must not include the target customer');
     }
 
-    const target = await this.customerModel.findOne({ _id: dto.targetId, isDeleted: false }).exec();
-    if (!target) {
-      throw new NotFoundException('Target customer not found');
-    }
-
-    const sources = await this.customerModel.find({ _id: { $in: dto.sourceIds }, isDeleted: false }).exec();
-
-    if (sources.length !== dto.sourceIds.length) {
-      throw new NotFoundException('One or more source customers were not found');
-    }
-
-    const oldTargetBalance = target.balance;
-    const oldTargetName = target.name;
-    const oldTargetPhone = target.phone;
-    const sourcesBalanceSum = sources.reduce((sum, source) => sum + source.balance, 0);
-
-    if (dto.name !== undefined) {
-      target.name = dto.name.trim();
-    }
-
-    if (dto.phone !== undefined) {
-      const phone = normalizeOptionalPhone(dto.phone);
-      if (phone !== target.phone) {
-        assertEgyptianMobile(phone);
-        if (phone) {
-          const excludedIds = [target._id, ...sources.map((source) => source._id)];
-          const existing = await this.customerModel
-            .findOne({
-              phone: { $in: equivalentMobilePhones(phone) },
-              isDeleted: false,
-              _id: { $nin: excludedIds },
-            })
-            .lean()
-            .exec();
-          if (existing) {
-            throw new ConflictException('Customer phone already exists');
-          }
-        }
-        target.phone = phone;
-      }
-    }
-
-    target.balance = roundMoney(oldTargetBalance + sourcesBalanceSum);
-
-    const sourceNames = sources.map((source) => source.name);
-    const changes: Record<string, { old: unknown; new: unknown }> = {
-      sourceIds: { old: null, new: sourceNames },
-      targetId: { old: null, new: target.name },
-      balance: { old: oldTargetBalance, new: target.balance },
-      sourcesBalanceSum: { old: sourcesBalanceSum, new: 0 },
-    };
-
-    if (target.name !== oldTargetName) {
-      changes.name = { old: oldTargetName, new: target.name };
-    }
-    if (target.phone !== oldTargetPhone) {
-      changes.phone = { old: oldTargetPhone, new: target.phone };
-    }
-
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const target = await this.customerModel
+        .findOne({ _id: dto.targetId, isDeleted: false }, null, { session })
+        .exec();
+      if (!target) {
+        throw new NotFoundException('Target customer not found');
+      }
+
+      const sources = await this.customerModel
+        .find({ _id: { $in: dto.sourceIds }, isDeleted: false }, null, { session })
+        .exec();
+
+      if (sources.length !== dto.sourceIds.length) {
+        throw new NotFoundException('One or more source customers were not found');
+      }
+
+      const oldTargetBalance = target.balance;
+      const oldTargetName = target.name;
+      const oldTargetPhone = target.phone;
+      const sourcesBalanceSum = sources.reduce((sum, source) => sum + source.balance, 0);
+
+      if (dto.name !== undefined) {
+        target.name = dto.name.trim();
+      }
+
+      if (dto.phone !== undefined) {
+        const phone = normalizeOptionalPhone(dto.phone);
+        if (phone !== target.phone) {
+          assertEgyptianMobile(phone);
+          if (phone) {
+            const excludedIds = [target._id, ...sources.map((source) => source._id)];
+            const existing = await this.customerModel
+              .findOne({
+                phone: { $in: equivalentMobilePhones(phone) },
+                isDeleted: false,
+                _id: { $nin: excludedIds },
+              })
+              .lean()
+              .exec();
+            if (existing) {
+              throw new ConflictException('Customer phone already exists');
+            }
+          }
+          target.phone = phone;
+        }
+      }
+
+      target.balance = roundMoney(oldTargetBalance + sourcesBalanceSum);
+
+      const sourceNames = sources.map((source) => source.name);
+      const changes: Record<string, { old: unknown; new: unknown }> = {
+        sourceIds: { old: null, new: sourceNames },
+        targetId: { old: null, new: target.name },
+        balance: { old: oldTargetBalance, new: target.balance },
+        sourcesBalanceSum: { old: sourcesBalanceSum, new: 0 },
+      };
+
+      if (target.name !== oldTargetName) {
+        changes.name = { old: oldTargetName, new: target.name };
+      }
+      if (target.phone !== oldTargetPhone) {
+        changes.phone = { old: oldTargetPhone, new: target.phone };
+      }
+
       const sourceObjectIds = sources.map((source) => source._id);
 
       await this.salesInvoiceModel.updateMany(
@@ -379,10 +398,29 @@ export class CustomersService {
 
     if (query.q?.trim()) {
       const escaped = query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [{ name: { $regex: escaped, $options: 'i' } }, { phone: { $regex: escaped, $options: 'i' } }];
+      filter.name = { $regex: escaped, $options: 'i' };
     }
 
     return filter;
+  }
+
+  private async toDetailResponse(customer: CustomerDocument): Promise<CustomerResponseDto> {
+    const invoiceQuery = this.salesInvoiceModel.aggregate<{ total: number }>([
+      { $match: { customerId: new Types.ObjectId(customer._id.toString()), status: 'saved' } },
+      { $group: { _id: null, total: { $sum: { $subtract: ['$total', { $ifNull: ['$discount', 0] }] } } } },
+    ]);
+    const paymentQuery = this.paymentModel.aggregate<{ total: number }>([
+      { $match: { customerId: new Types.ObjectId(customer._id.toString()), reversedAt: null } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]);
+    const invoiceRows = await invoiceQuery.exec();
+    const paymentRows = await paymentQuery.exec();
+    const totalInvoiced = roundMoney(invoiceRows[0]?.total ?? 0);
+    const totalPaid = roundMoney(paymentRows[0]?.total ?? 0);
+    return {
+      ...this.toResponseDto(customer),
+      financialSummary: { totalInvoiced, totalPaid },
+    };
   }
 
   private toResponseDto(customer: CustomerDocument): CustomerResponseDto {

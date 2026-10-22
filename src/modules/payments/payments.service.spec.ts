@@ -177,35 +177,13 @@ describe('PaymentsService', () => {
       await expect(service.recordPayment({ customerId, amount: 500 }, actor)).rejects.toThrow(BadRequestException);
     });
 
-    it('throws BadRequestException if customer balance is 0 or negative', async () => {
-      customerModel.findOne.mockReturnValue(mockQuery(makeCustomer({ balance: 0 })));
-
-      await expect(service.recordPayment({ customerId, amount: 500 }, actor)).rejects.toThrow(
-        'Customer has no outstanding balance',
-      );
-    });
-
-    it('throws BadRequestException if payment amount exceeds balance', async () => {
-      customerModel.findOne.mockReturnValue(mockQuery(makeCustomer({ balance: 1000 })));
-
-      await expect(service.recordPayment({ customerId, amount: 1500 }, actor)).rejects.toThrow(
-        'Payment amount (1500 ج.م) cannot exceed customer balance (1000 ج.م)',
-      );
-    });
-
-    it('re-validates balance inside session and throws when balance changed concurrently', async () => {
-      const initialCustomer = makeCustomer({ balance: 5000 });
-      const lockedCustomer = makeCustomer({ balance: 1000 });
-
-      customerModel.findOne
-        .mockReturnValueOnce(mockQuery(initialCustomer))
-        .mockReturnValueOnce(mockQuery(lockedCustomer));
-
-      await expect(service.recordPayment({ customerId, amount: 1500 }, actor)).rejects.toThrow(
-        'Payment amount (1500 ج.م) cannot exceed customer balance (1000 ج.م)',
-      );
-
-      expect(session.abortTransaction).toHaveBeenCalled();
+    it.each([0, -50, 1000])('accepts prepayments with balance %s and can create credit', async (balance) => {
+      const customer = makeCustomer({ balance });
+      customerModel.findOne.mockReturnValue(mockQuery(customer));
+      paymentModel.create.mockResolvedValue([makePayment({ amount: 1500 })]);
+      await service.recordPayment({ customerId, amount: 1500 }, actor);
+      expect(customer.balance).toBe(balance - 1500);
+      expect(session.commitTransaction).toHaveBeenCalled();
     });
   });
 
@@ -398,6 +376,12 @@ describe('PaymentsService', () => {
   });
 
   describe('findOne', () => {
+    it('exposes the originating invoice for an additional account payment without changing its notes', async () => {
+      paymentModel.findById.mockReturnValue(mockQuery(makePayment({ sourceInvoiceId: { toString: () => invoiceId } })));
+      const result = await service.findOne(paymentId);
+      expect(result).toMatchObject({ sourceInvoiceId: invoiceId, invoiceId: null, amount: 2000, notes: 'Test note' });
+    });
+
     it('returns a payment if found', async () => {
       const rawPayment = makePayment();
       paymentModel.findById.mockReturnValue(mockQuery(rawPayment));

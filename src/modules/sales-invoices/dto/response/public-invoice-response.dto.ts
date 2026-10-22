@@ -22,5 +22,6 @@ export class PublicInvoiceResponseDto {
   total: number;
   discount: number;
   paid: number;
+  accountPaymentAmount: number;
   remaining: number;
 }

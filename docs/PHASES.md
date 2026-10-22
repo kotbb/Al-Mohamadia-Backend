@@ -44,10 +44,10 @@ browser; the frontend successfully calls the backend's health endpoint.
 
 **Backend**
 - `User`, `RefreshToken` schemas
-- Register (super_admin only), login, refresh, logout endpoints
+- Login, refresh, logout; super-admin account creation through `POST /users` (no registration endpoint)
 - JWT access + refresh token issuance/rotation (hashed refresh token storage)
 - Role guards: `super_admin`, `admin`
-- Seed script for the first super admin account
+- Initial super-admin provisioning is external; no first-user seed script exists in this checkout
 
 **Frontend**
 - Login page
@@ -98,8 +98,8 @@ Modules: `src/modules/categories`, `items`.
 **Backend** — *Done*
 
 - [x] `Customer`, `Supplier` schemas/modules
-- [x] CRUD, search by name/phone, pagination, `hasDebt` filter, debt summaries
-- [x] Create-only opening `balance` / `amountOwed` (not writable on PATCH)
+- [x] CRUD, customer search by name only (supplier search retains name/phone), pagination, `hasDebt` filter, debt summaries
+- [x] Optional starting and editable current `balance` / `amountOwed`, with automatic adjustment audit
 - [x] Soft-delete blocked when outstanding debt ≠ 0
 - [x] Merge-duplicate endpoints for customers **and** suppliers (`دمج أسماء مكررة`)
 - [x] Dev seed script: `npm run seed:parties`
@@ -109,7 +109,7 @@ Modules: `src/modules/categories`, `items`.
 
 - [x] Customers list (sorted by balance, filter "has debt"), total debt + debtor count
 - [x] Suppliers list, total owed at top
-- [x] Add/edit modals for both (create-only opening balance/amount owed; optional address)
+- [x] Add/edit modals for both (optional starting balance and editable current balance; optional address)
 - [x] Detail pages (identity + balance/owed; no invoice/payment history in Phase 3)
 - [x] Multi-source merge UI for customers and suppliers
 
@@ -170,9 +170,9 @@ applicable) customer debt update correctly, edit it with atomic stock/balance re
 | Receipt and navigation | `GET /sales-invoices/:id/receipt`, `GET /sales-invoices/:id/neighbors` |
 | Legacy Share & Public Receipt | `GET /public/sales-invoices/:token`, `GET /sales-invoices/:id/share` |
 
-List query params: `status`, `period`, `date`, `q`, `page`, `limit`.
+List query params: `q`, `customerId`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
 List response: `{ items, meta, summary: { totalAmount } }` (`totalAmount` is saved invoices matching the other filters).
-Create body: `{ customerId?, type, lines: [{ itemId, quantity, piecePrice?, width?, length?, thickness?, note? }], discount?, paid?, paymentMethod?, paymentNotes? }`.
+Create body: `{ customerId?, type, lines: [{ itemId, quantity, piecePrice, width?, length?, thickness?, note? }], discount?, paid, accountPaymentAmount?, paymentMethod?, paymentNotes? }`. `customerId` is required for customer sales. API `paid` is capped at net; the frontend splits entered excess into the independent `accountPaymentAmount`.
 Line dimensions `width`, `length`, and `thickness` are meters.
 Update body: `UpdateSalesInvoiceDto` (same shape as create, validates and reconciles stock, customer balance, and linked payments).
 
@@ -185,13 +185,13 @@ Module: `src/modules/sales-invoices`.
 **Backend** — *Done*
 
 - [x] Standalone payment endpoint (`POST /payments`) with strict validation:
-  `customerId` required, `0 < amount <= customer.balance`, reduces
+  `customerId` required, positive finite two-decimal `amount` with no debt cap, reduces
   `customer.balance` by `amount`, audit `payment_recorded`
 - [x] Payment cancellation endpoint (`POST /payments/:id/cancel`):
   only standalone payments (`invoiceId == null`), restores
   `customer.balance`, sets `reversedAt` / `reversedBy`, audit `payment_cancelled`
 - [x] List payments endpoint (`GET /payments`): filter by `customerId`, `invoiceId`,
-  `status` (`active` | `reversed`), `type` (`standalone` | `on_invoice`),
+  `status` (`active` | `reversed` | `all`), `type` (`standalone` | `invoice` | `all`),
   `method`, Cairo `period` + `date`, pagination, summary `totalAmount`
 - [x] Customer merge re-points standalone `Payment` rows to target in same transaction
 - [x] Update invoice creation to capture optional `paymentMethod` and `paymentNotes` when `paid > 0`
@@ -199,7 +199,7 @@ Module: `src/modules/sales-invoices`.
 **Frontend** — *Done*
 
 - [x] Dedicated Payments list page (`/payments`) with filters (Status, Customer search, Method, Cairo period/date), total collected summary card, and pagination
-- [x] "Record payment" modal action from customer detail view with full balance default, method selection, notes, and strict balance validation
+- [x] "Record payment" modal action from customer detail view with positive debt as its initial amount (blank for zero/credit), method selection, notes, and money validation; active accounts can pay beyond debt
 - [x] Payment history section on customer detail view showing all payments (standalone + on-invoice)
 - [x] Payment cancellation with confirmation dialog and customer debt restoration (disabled with tooltip for on-invoice payments)
 - [x] Sidebar updated with "Customer Invoices" / "فواتير المبيعات" rename and "Payments" / "المدفوعات" navigation item
@@ -214,7 +214,7 @@ recorded from the UI and their balance updates correctly.
 |----------|-----------|
 | Payments | `POST/GET /payments`, `GET /payments/:id`, `POST /payments/:id/cancel` |
 
-List query params: `customerId`, `invoiceId`, `status`, `type`, `method`, `period`, `date`, `page`, `limit`.
+List query params: `customerId`, `invoiceId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
 Create body: `{ customerId, amount, method?, notes? }`.
 List response: `{ items, meta, summary: { totalAmount } }`.
 
@@ -228,25 +228,26 @@ Module: `src/modules/payments`.
 
 - [x] `PurchaseInvoice`, `PurchaseInvoiceLine` schemas/module
 - [x] Create purchase (transactional: pricing-mode-aware stock increment + supplier `amountOwed += remaining`, on-purchase `SupplierPayment` when `paid > 0`, audit `purchase_created`)
+- [x] Edit saved purchase (`PATCH /purchases/:id`): replace supplier/lines/paid/notes with transactional stock, debt, linked-payment reconciliation and `purchase_updated` audit
 - [x] Sequential purchase numbering `PUR-NNNN` via `InvoiceCounter`
 - [x] Cancel purchase invoice (transactional: reverses stock + supplier `amountOwed`, voids associated `SupplierPayment` records, status `cancelled`, audit `purchase_cancelled`)
 - [x] List purchase invoices with filters (`supplierId`, `status`, `period` + `date`, `q`) and active summary (`totalAmount`)
 - [x] `SupplierPayment` schema & module (`src/modules/supplier-payments`):
-  - Standalone debt settlement (`POST /supplier-payments`): strict validation `0 < amount <= supplier.amountOwed`, reduces `amountOwed`
+  - Standalone debt settlement (`POST /supplier-payments`): positive finite two-decimal amount, no debt cap, active supplier required; reduces `amountOwed` and can create credit
   - Payment cancellation (`POST /supplier-payments/:id/cancel`): restores `amountOwed`, sets `reversedAt` / `reversedBy`, audits `supplier_payment_cancelled`
-  - Filterable list (`GET /supplier-payments`): by `supplierId`, `purchaseId`, `status`, `type`, `method`, Cairo `period` + `date`
+  - Filterable list (`GET /supplier-payments`): by `supplierId`, `purchaseInvoiceId`, `status`, `type`, `method`, Cairo `period` + `date`
 - [x] Supplier merge re-points both `PurchaseInvoice.supplierId` and `SupplierPayment.supplierId` to target in the same transaction
 - [x] Unit test suites covering critical paths, role guards, validation, cancel, and merge re-pointing
 
 **Frontend** — *Done*
 
 - [x] Dedicated Purchase Invoices list page (`/purchases`) with status/period/search filters, total purchases summary card, and pagination
-- [x] Modal-based new purchase invoice dialog matching customer invoice creation, with supplier picker, item selector with cubic-meter dimension calculation, live totals, and on-purchase payment
-- [x] View-only purchase invoice detail dialog/view with line items and transactional cancellation
+- [x] Dedicated purchase create/edit pages with supplier picker, category-grouped item choices, meter dimensions, live totals, and invoice/account payment allocation
+- [x] Purchase detail with line items, editing and transactional cancellation
 - [x] Dedicated Supplier Payments list page (`/supplier-payments`) with Cairo period/date filters, method filter, supplier search, summary card, and pagination
-- [x] "Record payment" modal action with debtor supplier droplist and live autocomplete search
+- [x] "Record payment" modal action with active supplier droplist (including zero/credit balances) and live autocomplete search
 - [x] Supplier detail view enhanced with purchase history, payments history, and quick record payment action
-- [x] Customer "Record payment" modal enhanced with debtor customer droplist and live autocomplete search
+- [x] Customer "Record payment" modal enhanced with active customer droplist (including zero/credit balances) and live autocomplete search
 - [x] Contextual navigation: "Back to list" returns to originating list (`/payments`, `/supplier-payments`, `/purchases`) via `?from=...` query parameter
 - [x] 3-Hub navigation structure in sidebar and horizontal tab bar: Sales & Customers, Purchases & Suppliers, Inventory & Catalog
 - [x] Complete bilingual Arabic / English translations and responsive token-based styling
@@ -258,13 +259,13 @@ supplier's owed amount, supplier payments can be recorded and cancelled, both vi
 
 | Resource | Endpoints |
 |----------|-----------|
-| Purchases | `POST/GET /purchases`, `GET /purchases/:id`, `POST /purchases/:id/cancel` |
+| Purchases | `POST/GET /purchases`, `GET/PATCH /purchases/:id`, `POST /purchases/:id/cancel` |
 | Supplier payments | `POST/GET /supplier-payments`, `GET /supplier-payments/:id`, `POST /supplier-payments/:id/cancel` |
 
-List query params (Purchases): `supplierId`, `status`, `period`, `date`, `q`, `page`, `limit`.
-Create body (Purchases): `{ supplierId, lines: [{ itemId, quantity, unitCost, width?, length?, thickness?, note? }], paid?, paymentMethod?, paymentNotes?, notes? }`.
+List query params (Purchases): `supplierId`, `status`, `period`, `date`, `from`, `to`, `q`, `page`, `limit`.
+Create body (Purchases): `{ supplierId, lines: [{ itemId, quantity, unitCost, width?, length?, thickness?, note? }], paid?, accountPaymentAmount?, existingDebtPayment?, notes? }`. `existingDebtPayment` is a create-only alias, mutually exclusive with `accountPaymentAmount`. PATCH requires `supplierId`, `lines`, and `paid`, with optional `accountPaymentAmount` and `notes`. Purchase invoice payments use cash and invoice notes; `paymentMethod`/`paymentNotes` are not accepted purchase fields.
 Line dimensions `width`, `length`, and `thickness` are meters.
-List query params (Supplier payments): `supplierId`, `purchaseId`, `status`, `type`, `method`, `period`, `date`, `page`, `limit`.
+List query params (Supplier payments): `supplierId`, `purchaseInvoiceId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
 Create body (Supplier payments): `{ supplierId, amount, method?, notes? }`.
 List response: `{ items, meta, summary: { totalAmount } }`.
 
@@ -395,9 +396,7 @@ Module: `src/modules/audit` (backend).
   lines. Displayed quantity/cubic totals and unit rankings count physical goods
   only; charges remain in sales and gross profit.
 - [x] Operating-expense UI/API and expense-dependent dashboard fields are retired.
-  Historical audit records remain. Inspect counts with `npm run cleanup:expenses`;
-  delete expense/category collections only by explicitly running
-  `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA`.
+  Historical audit records remain. No cleanup command is shipped; retired collections are left untouched. Any future cleanup requires a separately reviewed maintenance operation.
 - [x] Custom inclusive Cairo `from`/`to` ranges remain available for invoices,
   customer payments, purchases, supplier payments, and dashboard.
 
@@ -458,7 +457,7 @@ Module: `src/modules/audit` (backend).
 
 ### Validation and invoice navigation refinement
 
-Implemented optional Egyptian mobile validation, preserved unchanged legacy phones, partial phone indexes (the package-listed check/repair script is currently absent), trimmed required-text/null guards, consistent opening/item monetary precision, and finite positive cubic write guards across the two repositories. Invoice navigation uses a mode selector and labeled Previous/Next arrows; Arabic PDF guidance is also shown on public receipts and excluded from printed/downloaded output. Existing records are not rewritten. Manual English/Arabic/mobile checks remain user-run.
+Implemented optional Egyptian mobile validation, preserved unchanged legacy phones, partial phone indexes (no phone-index maintenance script is shipped), trimmed required-text/null guards, consistent account/item monetary precision, and finite positive cubic write guards across the two repositories. Invoice navigation uses a mode selector and labeled Previous/Next arrows; Arabic PDF guidance is also shown on public receipts and excluded from printed/downloaded output. Existing records are not rewritten. Manual English/Arabic/mobile checks remain user-run.
 
 ### DTO organization
 
@@ -475,3 +474,28 @@ the new paths. This refactor preserves validation, API payloads and persistence.
 - Optional Egyptian mobiles accept local/+20 formats and use English digits.
   The ten-digit international portion keeps generic `1XX XXX XXXX` guidance.
   Errors appear on invalid submit attempts, not while typing or on blur.
+
+
+## Account details and independent invoice/account payments (October 2026)
+
+- Customer and supplier details show three KPIs: lifetime net invoiced total, active payments, and current debt/credit. Invoice and payment histories remain separate and paginated. Contact displays and detail-page merge controls are removed; existing contact editing and other merge entry points remain.
+- New invoice links preselect the account; payment/edit actions are in the header. Account action buttons are removed from detail pages; lifecycle/delete remain available on list pages. Customer detail invoice history omits its redundant customer column.
+- One Balance field uses customer `balance` and supplier `amountOwed` on create and PATCH. Creation accepts an optional starting amount; editing sets the actual current amount. Signed finite two-decimal values support debt and credit. Automatic audit includes old/new values and the adjustment difference in the same transaction; invoices and payments remain unchanged. Contact-only edits omit an unchanged balance. No opening-balance field, migration, derivation, or backfill remains; existing records are untouched.
+- Sales and purchase creation/editing have one entered paid amount, split automatically into invoice payment and excess account payment. Remaining never falls below zero; an inline message explains the excess. API `paid` remains capped by invoice net. `accountPaymentAmount` is independent, may exceed account debt, and creates a standalone payment in the same transaction. Purchase create retains `existingDebtPayment` as an exclusive compatibility alias.
+- Invoice details/modal/receipt/print/PDF show invoice paid plus active origin-linked account payments, with a conditional invoice/previous-debt breakdown. Remaining continues to use invoice paid only. Additional account payments persist through invoice edits, reassignment, and cancellation and can be cancelled separately.
+- Standalone payments allow advance credit on active accounts with no debt or existing credit. Credit offsets future account charges without allocating payment to future invoices.
+- Verification: architecture checks/tests, frontend form/receipt tests, backend unit and temporary MongoDB replica-set tests, builds and lint; manual UI checklist without agent browser access.
+
+Sales creation defaults to Customer Sale, with a single searchable customer selection field rather than separate search and select controls.
+
+
+Additional account payments now retain source-invoice provenance (`Payment.sourceInvoiceId`, `SupplierPayment.sourcePurchaseInvoiceId`) separately from lifecycle links. Invoice/public responses expose active same-party `accountPaymentAmount`; the UI combines it with invoice `paid` for display only. Earlier payments without provenance are not inferred or backfilled from matching timestamps/amounts. Selected customers use the same muted summary panel as suppliers and a Change customer action to reopen the single search dropdown.
+
+
+Payment-history notes distinguish additional account payments while preserving user memos and split rows. Receipt, export, preview and detail breakdowns isolate the numeric expression for RTL and keep the extra amount attached to its previous-debt label; receipt paid totals align beneath the invoice amount with brackets alongside.
+
+### Name-only customer lookup and searchable sales items (October 2026)
+
+- Customer listing search (`q`) matches escaped customer names only. Sales creation, customer management, and customer-payment searches use that same contract; phone numbers remain editable contact data.
+- Sales invoice item selection searches item or category names inside one keyboard-accessible dropdown, retaining the chosen item and its line settings until another choice is confirmed. Active items and an existing inactive selection are supported.
+- Sales summary places Paid amount before Discount in locale reading order, including on narrow screens. Existing payment allocation calculations are unchanged.

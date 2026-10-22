@@ -1,6 +1,7 @@
+import { SupplierPayment, SupplierPaymentDocument } from '../supplier-payments/schemas/supplier-payment.schema';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { Supplier, SupplierDocument } from './schemas/supplier.schema';
 import { CreateSupplierDto } from './dto/request/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/request/update-supplier.dto';
@@ -26,6 +27,8 @@ export class SuppliersService {
     private readonly supplierModel: Model<SupplierDocument>,
     @InjectModel(PurchaseInvoice.name)
     private readonly purchaseInvoiceModel: Model<PurchaseInvoiceDocument>,
+    @InjectModel(SupplierPayment.name)
+    private readonly paymentModel: Model<SupplierPaymentDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly auditService: AuditService,
   ) {}
@@ -35,7 +38,10 @@ export class SuppliersService {
     const phone = normalizeOptionalPhone(dto.phone);
     assertEgyptianMobile(phone);
     const address = normalizeOptionalAddress(dto.address);
-    const amountOwed = roundMoney(dto.amountOwed ?? 0);
+    const amountOwed = dto.amountOwed ?? 0;
+    if (dto.amountOwed === null || !Number.isFinite(amountOwed) || amountOwed !== roundMoney(amountOwed)) {
+      throw new BadRequestException('amountOwed must be a finite amount with at most 2 decimal places');
+    }
 
     if (phone) {
       const existing = await this.supplierModel
@@ -123,63 +129,75 @@ export class SuppliersService {
     if (!supplier) {
       throw new NotFoundException('Supplier not found');
     }
-    return this.toResponseDto(supplier);
+    return this.toDetailResponse(supplier);
   }
 
   public async update(id: string, dto: UpdateSupplierDto, user: AuthUser): Promise<SupplierResponseDto> {
-    const supplier = await this.supplierModel.findOne({ _id: id, isDeleted: false }).exec();
-    if (!supplier) {
-      throw new NotFoundException('Supplier not found');
-    }
-
-    const changes: Record<string, { old: unknown; new: unknown }> = {};
-
-    if (dto.name !== undefined) {
-      const name = dto.name.trim();
-      if (name !== supplier.name) {
-        changes.name = { old: supplier.name, new: name };
-        supplier.name = name;
-      }
-    }
-
-    if (dto.phone !== undefined) {
-      const phone = normalizeOptionalPhone(dto.phone);
-      if (phone !== supplier.phone) {
-        assertEgyptianMobile(phone);
-        if (phone) {
-          const existing = await this.supplierModel
-            .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: supplier._id } })
-            .lean()
-            .exec();
-          if (existing) {
-            throw new ConflictException('Supplier phone already exists');
-          }
-        }
-        changes.phone = { old: supplier.phone, new: phone };
-        supplier.phone = phone;
-      }
-    }
-
-    if (dto.address !== undefined) {
-      const address = normalizeOptionalAddress(dto.address);
-      if (address !== supplier.address) {
-        changes.address = { old: supplier.address, new: address };
-        supplier.address = address;
-      }
-    }
-
-    if (dto.isActive !== undefined && dto.isActive !== supplier.isActive) {
-      changes.isActive = { old: supplier.isActive, new: dto.isActive };
-      supplier.isActive = dto.isActive;
-    }
-
-    if (Object.keys(changes).length === 0) {
-      return this.toResponseDto(supplier);
-    }
-
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const supplier = await this.supplierModel.findOne({ _id: id, isDeleted: false }, null, { session }).exec();
+      if (!supplier) {
+        throw new NotFoundException('Supplier not found');
+      }
+
+      const changes: Record<string, { old: unknown; new: unknown }> = {};
+      if (dto.amountOwed !== undefined) {
+        const newBalance = dto.amountOwed;
+        if (!Number.isFinite(newBalance) || newBalance !== roundMoney(newBalance)) {
+          throw new BadRequestException('amountOwed must be a finite amount with at most 2 decimal places');
+        }
+        const oldBalance = supplier.amountOwed;
+        if (oldBalance !== newBalance) {
+          supplier.amountOwed = newBalance;
+          changes.amountOwed = { old: oldBalance, new: newBalance };
+          changes.balanceAdjustment = { old: 0, new: roundMoney(newBalance - oldBalance) };
+        }
+      }
+
+      if (dto.name !== undefined) {
+        const name = dto.name.trim();
+        if (name !== supplier.name) {
+          changes.name = { old: supplier.name, new: name };
+          supplier.name = name;
+        }
+      }
+
+      if (dto.phone !== undefined) {
+        const phone = normalizeOptionalPhone(dto.phone);
+        if (phone !== supplier.phone) {
+          assertEgyptianMobile(phone);
+          if (phone) {
+            const existing = await this.supplierModel
+              .findOne({ phone: { $in: equivalentMobilePhones(phone) }, isDeleted: false, _id: { $ne: supplier._id } })
+              .lean()
+              .exec();
+            if (existing) {
+              throw new ConflictException('Supplier phone already exists');
+            }
+          }
+          changes.phone = { old: supplier.phone, new: phone };
+          supplier.phone = phone;
+        }
+      }
+
+      if (dto.address !== undefined) {
+        const address = normalizeOptionalAddress(dto.address);
+        if (address !== supplier.address) {
+          changes.address = { old: supplier.address, new: address };
+          supplier.address = address;
+        }
+      }
+
+      if (dto.isActive !== undefined && dto.isActive !== supplier.isActive) {
+        changes.isActive = { old: supplier.isActive, new: dto.isActive };
+        supplier.isActive = dto.isActive;
+      }
+
+      if (Object.keys(changes).length === 0) {
+        await session.commitTransaction();
+        return this.toResponseDto(supplier);
+      }
       await supplier.save({ session });
       await this.auditService.log(
         {
@@ -254,73 +272,83 @@ export class SuppliersService {
       throw new BadRequestException('Source suppliers must not include the target supplier');
     }
 
-    const target = await this.supplierModel.findOne({ _id: dto.targetId, isDeleted: false }).exec();
-    if (!target) {
-      throw new NotFoundException('Target supplier not found');
-    }
-
-    const sources = await this.supplierModel.find({ _id: { $in: dto.sourceIds }, isDeleted: false }).exec();
-
-    if (sources.length !== dto.sourceIds.length) {
-      throw new NotFoundException('One or more source suppliers were not found');
-    }
-
-    // Phase 6+: reassign PurchaseInvoice from each source → target in this same transaction.
-
-    const oldTargetAmountOwed = target.amountOwed;
-    const oldTargetName = target.name;
-    const oldTargetPhone = target.phone;
-    const sourcesAmountOwedSum = sources.reduce((sum, source) => sum + source.amountOwed, 0);
-
-    if (dto.name !== undefined) {
-      target.name = dto.name.trim();
-    }
-
-    if (dto.phone !== undefined) {
-      const phone = normalizeOptionalPhone(dto.phone);
-      if (phone !== target.phone) {
-        assertEgyptianMobile(phone);
-        if (phone) {
-          const excludedIds = [target._id, ...sources.map((source) => source._id)];
-          const existing = await this.supplierModel
-            .findOne({
-              phone: { $in: equivalentMobilePhones(phone) },
-              isDeleted: false,
-              _id: { $nin: excludedIds },
-            })
-            .lean()
-            .exec();
-          if (existing) {
-            throw new ConflictException('Supplier phone already exists');
-          }
-        }
-        target.phone = phone;
-      }
-    }
-
-    target.amountOwed = roundMoney(oldTargetAmountOwed + sourcesAmountOwedSum);
-
-    const sourceNames = sources.map((source) => source.name);
-    const changes: Record<string, { old: unknown; new: unknown }> = {
-      sourceIds: { old: null, new: sourceNames },
-      targetId: { old: null, new: target.name },
-      amountOwed: { old: oldTargetAmountOwed, new: target.amountOwed },
-      sourcesAmountOwedSum: { old: sourcesAmountOwedSum, new: 0 },
-    };
-
-    if (target.name !== oldTargetName) {
-      changes.name = { old: oldTargetName, new: target.name };
-    }
-    if (target.phone !== oldTargetPhone) {
-      changes.phone = { old: oldTargetPhone, new: target.phone };
-    }
-
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const target = await this.supplierModel
+        .findOne({ _id: dto.targetId, isDeleted: false }, null, { session })
+        .exec();
+      if (!target) {
+        throw new NotFoundException('Target supplier not found');
+      }
+
+      const sources = await this.supplierModel
+        .find({ _id: { $in: dto.sourceIds }, isDeleted: false }, null, { session })
+        .exec();
+
+      if (sources.length !== dto.sourceIds.length) {
+        throw new NotFoundException('One or more source suppliers were not found');
+      }
+
+      // Phase 6+: reassign PurchaseInvoice from each source → target in this same transaction.
+
+      const oldTargetAmountOwed = target.amountOwed;
+      const oldTargetName = target.name;
+      const oldTargetPhone = target.phone;
+      const sourcesAmountOwedSum = sources.reduce((sum, source) => sum + source.amountOwed, 0);
+
+      if (dto.name !== undefined) {
+        target.name = dto.name.trim();
+      }
+
+      if (dto.phone !== undefined) {
+        const phone = normalizeOptionalPhone(dto.phone);
+        if (phone !== target.phone) {
+          assertEgyptianMobile(phone);
+          if (phone) {
+            const excludedIds = [target._id, ...sources.map((source) => source._id)];
+            const existing = await this.supplierModel
+              .findOne({
+                phone: { $in: equivalentMobilePhones(phone) },
+                isDeleted: false,
+                _id: { $nin: excludedIds },
+              })
+              .lean()
+              .exec();
+            if (existing) {
+              throw new ConflictException('Supplier phone already exists');
+            }
+          }
+          target.phone = phone;
+        }
+      }
+
+      target.amountOwed = roundMoney(oldTargetAmountOwed + sourcesAmountOwedSum);
+
+      const sourceNames = sources.map((source) => source.name);
+      const changes: Record<string, { old: unknown; new: unknown }> = {
+        sourceIds: { old: null, new: sourceNames },
+        targetId: { old: null, new: target.name },
+        amountOwed: { old: oldTargetAmountOwed, new: target.amountOwed },
+        sourcesAmountOwedSum: { old: sourcesAmountOwedSum, new: 0 },
+      };
+
+      if (target.name !== oldTargetName) {
+        changes.name = { old: oldTargetName, new: target.name };
+      }
+      if (target.phone !== oldTargetPhone) {
+        changes.phone = { old: oldTargetPhone, new: target.phone };
+      }
+
       const sourceObjectIds = sources.map((source) => source._id);
 
       await this.purchaseInvoiceModel.updateMany(
+        { supplierId: { $in: sourceObjectIds } },
+        { $set: { supplierId: target._id } },
+        { session },
+      );
+
+      await this.paymentModel.updateMany(
         { supplierId: { $in: sourceObjectIds } },
         { $set: { supplierId: target._id } },
         { session },
@@ -377,6 +405,25 @@ export class SuppliersService {
     }
 
     return filter;
+  }
+
+  private async toDetailResponse(supplier: SupplierDocument): Promise<SupplierResponseDto> {
+    const invoiceQuery = this.purchaseInvoiceModel.aggregate<{ total: number }>([
+      { $match: { supplierId: new Types.ObjectId(supplier._id.toString()), status: 'saved' } },
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]);
+    const paymentQuery = this.paymentModel.aggregate<{ total: number }>([
+      { $match: { supplierId: new Types.ObjectId(supplier._id.toString()), reversedAt: null } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]);
+    const invoiceRows = await invoiceQuery.exec();
+    const paymentRows = await paymentQuery.exec();
+    const totalInvoiced = roundMoney(invoiceRows[0]?.total ?? 0);
+    const totalPaid = roundMoney(paymentRows[0]?.total ?? 0);
+    return {
+      ...this.toResponseDto(supplier),
+      financialSummary: { totalInvoiced, totalPaid },
+    };
   }
 
   private toResponseDto(supplier: SupplierDocument): SupplierResponseDto {

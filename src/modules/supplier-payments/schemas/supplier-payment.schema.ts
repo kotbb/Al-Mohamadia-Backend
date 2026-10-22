@@ -12,6 +12,10 @@ export class SupplierPayment {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'PurchaseInvoice', required: false, default: null })
   purchaseInvoiceId: Types.ObjectId | null;
 
+  // Provenance only: this standalone payment retains its independent lifecycle.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'PurchaseInvoice', required: false, default: null })
+  sourcePurchaseInvoiceId?: Types.ObjectId | null;
+
   @Prop({ required: true })
   amount: number;
 

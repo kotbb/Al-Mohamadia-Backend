@@ -36,7 +36,7 @@ non-transport contracts remain in the feature's `types/` directory.
 | 3 | Done | `customers`, `suppliers` — CRUD, search, merge, debt summaries — see [PHASES.md](./PHASES.md#phase-3--customers--suppliers) |
 | 4 | Done | `sales-invoices` — create/list/get/update/cancel/share + public token receipt — see [PHASES.md](./PHASES.md#phase-4--sales-invoicing-core-feature) |
 | 5 | Done | `payments` — record standalone debt payment, cancel, filterable list, method & notes — see [PHASES.md](./PHASES.md#phase-5--payments-standalone-debt-payments) |
-| 6 | Done | `purchases` (create/list/get/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
+| 6 | Done | `purchases` (create/list/get/update/cancel), `supplier-payments` (record/list/get/cancel) — see [PHASES.md](./PHASES.md#phase-6--purchasing--restocking-including-supplier-payments) |
 | 7 | Done | `inventory` — stock levels with status flags, valuation at cost & selling, manual stock adjustments recorded on the audit log (`GET /inventory/stock`, `GET /inventory/valuation`, `POST /inventory/adjustments`) — see [PHASES.md](./PHASES.md#phase-7--inventory-management) |
 | 8 | Done | `dashboard` — today KPIs, debt KPI, period-scoped sales series + top sellers (`GET /dashboard`) — see [PHASES.md](./PHASES.md#phase-8--dashboard) |
 | 9 | Done | `audit` — append-only log list and actor filter — see [PHASES.md](./PHASES.md#phase-9--audit-log-ui) |
@@ -73,10 +73,9 @@ No public website webhooks, mobile apps, or multi-tenant headers in MVP.
 ## API conventions
 
 - Base prefix: `/api/v1`
-- Money: plain numbers in EGP; round to **2 decimals at write time**
+- Money: client-supplied EGP amounts must be finite and already have at most two decimals; computed totals round at write time
 - Validation: whitelist DTOs (`class-validator`); reject unknown body fields
-- Never trust client-computed fields (`remaining`, `balance`, `amountOwed`,
-  `lineTotal`, price snapshots) — **recompute server-side**
+- Recompute invoice totals, remaining, stock, and account deltas server-side. Explicit customer `balance` / supplier `amountOwed` corrections are validated signed inputs, saved with adjustment audit in one transaction.
 - Mutations that touch more than one collection run in a **Mongo transaction**
 - Soft delete (`isDeleted` / `isActive`) on `Category`, `Customer`,
   `Supplier`, `User`, `Item`. `ItemPriceHistory` and `AuditLog` are
@@ -84,8 +83,7 @@ No public website webhooks, mobile apps, or multi-tenant headers in MVP.
 - Roles: `super_admin` only for user-management endpoints; `admin` (and
   `super_admin`) for everything else
 
-Exact success/error envelope shape is set in Phase 0 — keep it consistent
-once chosen.
+JSON success responses use `{ success: true, data }`. Errors use `{ success: false, statusCode, message, path, timestamp, errorCode? }`; validation messages may be an array.
 
 Schema source of truth: [DATABASE.md](./DATABASE.md).
 
@@ -111,13 +109,16 @@ is authoritative.
   reverses stock and reverses the `balance += remaining` applied at save.
 - Saving a purchase invoice increases `Item.stockQuantity` and increases
   `Supplier.amountOwed` by `remaining`.
-- On-purchase `SupplierPayment` (`purchaseId` set): history + purchase invoice `paid` /
+- On-purchase `SupplierPayment` (`purchaseInvoiceId` set): history + purchase invoice `paid` /
   `remaining` only — **does not** change `Supplier.amountOwed` directly (debt was already set to
   that purchase's `remaining` on save).
-- Standalone `SupplierPayment` (`purchaseId` null, `supplierId` set): **does**
+- Standalone `SupplierPayment` (`purchaseInvoiceId` null, `supplierId` set): **does**
   reduce `Supplier.amountOwed` by `amount`.
 - Cancelling a purchase invoice reverses stock, reverses `Supplier.amountOwed += remaining`,
   and voids associated `SupplierPayment` records.
+- Editing a saved purchase replaces its lines, supplier, paid amount and notes
+  transactionally; stock, supplier debt and its linked payment are reconciled.
+  Separate payments toward older supplier debt remain with their original supplier.
 - Price/cost changes append `ItemPriceHistory` (never silent overwrite).
 - Manual stock corrections update `Item.stockQuantity` and write
   `stock_adjusted` on `AuditLog` with the quantity and the reason.
@@ -153,7 +154,9 @@ Customer
   ├── SalesInvoice → SalesInvoiceLine (+ Payment)
   └── Payment (standalone debt)
 
-Supplier → PurchaseInvoice → PurchaseInvoiceLine
+Supplier
+  ├── PurchaseInvoice → PurchaseInvoiceLine (+ SupplierPayment)
+  └── SupplierPayment (standalone debt or advance credit)
 
 AuditLog (append-only)
 ```
@@ -181,7 +184,7 @@ See [`.env.example`](../.env.example) for the template.
 | `JWT_ACCESS_EXPIRES_IN`  | e.g. `10m` (Phase 1)                   |
 | `JWT_REFRESH_EXPIRES_IN` | e.g. `21d` (Phase 1)                   |
 | `FRONTEND_URL`           | Base URL of frontend application for public WhatsApp receipts (default `http://localhost:3001`) |
-| `CORS_ORIGIN`            | Comma-separated browser origins (default `http://localhost:3001`) |
+| `CORS_ORIGIN`            | Single allowed browser origin; comma-separated values are not parsed (default `http://localhost:3001`) |
 
 
 ### Seed scripts (development)
@@ -284,10 +287,22 @@ all business logic or ownership decisions correct.
 
 Authenticated receipt and numeric/same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
 
-The operating-expense feature and API have been retired. Expense and category data is removed only by explicitly running `npm run cleanup:expenses` to inspect counts, then `npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA` against the intended database. Historical expense audit entries are retained.
+The operating-expense feature and API have been retired. No cleanup command is shipped. Existing expense/category collections and historical audit entries are left untouched; any cleanup requires a separately reviewed maintenance operation.
 
 
 ### Mobile validation and invoice presentation
 
 Customer/supplier phones accept optional Egyptian mobiles with canonical English local digits; unchanged legacy values remain intact. Text/null/money and invoice calculation guards are tightened. See [the optional-phone contract](DATABASE.md#optional-phones-and-dimension-contract)
 and [current seed/maintenance limitations](../README.md#seed-data-development).
+
+
+### Account balance and payment workflow
+
+Customer/supplier detail pages show three KPIs: lifetime net invoice totals, active payments, and signed current balance, followed by separate invoice and payment histories. Create accepts an optional starting Balance. Edit shows the actual current Balance and saves an intentional correction directly, with old/new amounts and the difference recorded automatically in the same transaction. Corrections do not change invoices, payments, or their totals. Negative balances represent credit. There is no separate opening balance, legacy derivation, migration, or backfill; existing database records are untouched.
+
+Invoice creation and editing expose one **Paid amount** field. The form caps the invoice payment at net, keeps remaining at zero when overpaid, and automatically records the difference as an additional account payment, explained inline. The resulting account debt/credit preview remains visible. Saved invoice details, modal, print/PDF and public receipt show the combined paid total and, when an origin-linked extra exists, a parenthesized invoice-plus-previous-debt breakdown; the additional amount reduces account debt or creates advance credit. It is recorded in payment history and remains active if that invoice is edited, reassigned, or cancelled. Cancel it separately when necessary. Standalone payments can also create credit. Existing credit offsets future account debt without changing individual invoice settlement.
+
+Sales creation defaults to Customer Sale, with a single searchable customer selection field rather than separate search and select controls.
+
+
+Additional account payments now retain source-invoice provenance (`Payment.sourceInvoiceId`, `SupplierPayment.sourcePurchaseInvoiceId`) separately from lifecycle links. Invoice/public responses expose active same-party `accountPaymentAmount`; the UI combines it with invoice `paid` for display only. Earlier payments without provenance are not inferred or backfilled from matching timestamps/amounts. Selected customers use the same muted summary panel as suppliers and a Change customer action to reopen the single search dropdown.

@@ -38,19 +38,9 @@ export class PaymentsService {
       throw new BadRequestException('Customer is inactive');
     }
 
-    if (customer.balance <= 0) {
-      throw new BadRequestException('Customer has no outstanding balance');
-    }
-
     const amount = roundMoney(dto.amount);
-    if (amount <= 0) {
+    if (!Number.isFinite(dto.amount) || dto.amount !== amount || amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than zero');
-    }
-
-    if (amount > customer.balance) {
-      throw new BadRequestException(
-        `Payment amount (${amount} ج.م) cannot exceed customer balance (${customer.balance} ج.م)`,
-      );
     }
 
     const session = await this.connection.startSession();
@@ -68,16 +58,6 @@ export class PaymentsService {
 
       if (!lockedCustomer.isActive) {
         throw new BadRequestException('Customer is inactive');
-      }
-
-      if (lockedCustomer.balance <= 0) {
-        throw new BadRequestException('Customer has no outstanding balance');
-      }
-
-      if (amount > lockedCustomer.balance) {
-        throw new BadRequestException(
-          `Payment amount (${amount} ج.م) cannot exceed customer balance (${lockedCustomer.balance} ج.م)`,
-        );
       }
 
       const oldBalance = lockedCustomer.balance;
@@ -317,6 +297,7 @@ export class PaymentsService {
       id: payment._id.toString(),
       customerId: payment.customerId ? payment.customerId.toString() : null,
       invoiceId: payment.invoiceId ? payment.invoiceId.toString() : null,
+      sourceInvoiceId: payment.sourceInvoiceId?.toString() ?? null,
       amount: roundMoney(payment.amount),
       method: payment.method ?? PaymentMethod.CASH,
       notes: payment.notes ?? null,

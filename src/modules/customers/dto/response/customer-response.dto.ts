@@ -4,6 +4,7 @@ export class CustomerResponseDto {
   phone: string | null;
   address: string | null;
   balance: number;
+  financialSummary?: { totalInvoiced: number; totalPaid: number };
   isActive: boolean;
   isDeleted: boolean;
   createdAt?: Date;

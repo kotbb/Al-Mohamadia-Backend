@@ -67,7 +67,13 @@ export class CreatePurchaseInvoiceDto {
   @IsNumber()
   @Min(0)
   @IsMoneyAmount()
-  existingDebtPayment?: number = 0;
+  accountPaymentAmount?: number;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsNumber()
+  @Min(0)
+  @IsMoneyAmount()
+  existingDebtPayment?: number;
 
   @ValidateIf((_, value) => value !== undefined)
   @IsString()

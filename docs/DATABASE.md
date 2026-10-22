@@ -30,7 +30,7 @@ schema changes.
 | name | string | required |
 | phone | string \| null | optional; new/changed Egyptian mobiles normalized to English local digits, unique among non-deleted records |
 | address | string \| null | optional; trimmed; empty string stored as null |
-| balance | number | denormalized running debt (مديونية), default 0; settable **only on create** as opening balance (≥ 0); never accepted on PATCH |
+| balance | number | signed current debt (مديونية), default 0; optional starting value on create and direct current-balance correction on PATCH |
 | isActive | boolean | deactivation flag (allowed even when balance ≠ 0) |
 | isDeleted | boolean | soft delete; blocked when `balance !== 0` |
 | createdAt / updatedAt | date | |
@@ -52,7 +52,7 @@ all sources; audits `customer_merged`. Re-points `SalesInvoice` and `Payment`
 | name | string | required |
 | phone | string \| null | optional; when set, unique among non-deleted; normalized like customer phone |
 | address | string \| null | optional; trimmed; empty string stored as null |
-| amountOwed | number | denormalized running total, default 0; settable **only on create** (≥ 0); never accepted on PATCH |
+| amountOwed | number | signed current amount owed, default 0; optional starting value on create and direct current-balance correction on PATCH |
 | isActive | boolean | deactivation allowed even when amountOwed ≠ 0 |
 | isDeleted | boolean | soft delete; blocked when `amountOwed !== 0` |
 | createdAt / updatedAt | date | |
@@ -170,11 +170,11 @@ index on `{ categoryId: 1, isDeleted: 1 }`.
 | lines | SalesInvoiceLine[] | embedded; at least one required |
 | total | number | subtotal before discount (server-computed) |
 | discount | number | default 0; must be `0 ≤ discount ≤ total` |
-| paid | number | amount collected at create; must equal net for cash; `0 ≤ paid ≤ net` for customer |
+| paid | number | invoice-allocated amount on create/edit; must equal net for cash; `0 ≤ paid ≤ net` for customer |
 | remaining | number | `total - discount - paid` |
 | status | string enum | `saved` \| `cancelled` |
 | createdBy | ObjectId → User | |
-| pdfShareToken | string \| null | durable public share secret (`crypto` hex, 64 chars); unique sparse index; minted lazily on first `GET .../share` |
+| pdfShareToken | string \| null | durable public share secret (`crypto` hex, 64 chars); unique partial index for string tokens; minted lazily on first `GET .../share` |
 | createdAt / updatedAt | date | |
 
 **Relationships:** belongs to `Customer` (nullable); created by `User`;
@@ -196,8 +196,7 @@ unique partial on `pdfShareToken` where token is a string.
   - `free_amount`: no stock movement
 - Cancelling an invoice (`status = cancelled`) reverses the stock deduction
   and reverses the `Customer.balance += remaining` that was applied at save
-  time (use the invoice’s original `remaining` at save, not a replay of
-  payment rows). On-invoice `Payment` rows get `reversedAt` / `reversedBy`.
+  time (use its currently persisted `remaining`, including edits, rather than replaying payment rows). On-invoice `Payment` rows get `reversedAt` / `reversedBy`.
 - Editing an invoice after save (`PATCH /sales-invoices/:id`):
   - Only `SAVED` invoices can be edited (`CANCELLED` invoices cannot be edited).
   - Preserves immutable identifiers: `invoiceNumber`, `pdfShareToken`, and `createdAt`.
@@ -205,10 +204,12 @@ unique partial on `pdfShareToken` where token is a string.
   - Customer balance adjustment: removes old remaining from customer debt and applies new remaining (handles customer changes and switching between `cash_sale` and `customer_sale`).
   - In-place payment reconciliation: updates existing linked payment amount and method in-place, creates new payment if previously unpaid, or soft-reverses if new `paid = 0`.
   - Emits `invoice_updated` to `AuditLog`.
-- Reject deleted or inactive items/customers on create or update.
+- Reject deleted items/customers on create or update. Creation and newly selected
+  edit records require active status; unchanged inactive items/customers may
+  remain on a saved invoice during editing.
 - List filters: optional `status`; `period=day|week|month|year` + `date`
   (`YYYY-MM-DD`) in **Africa/Cairo** (week = Saturday–Friday); search `q`
-  by invoice number or customer name/phone.
+  by invoice number or customer name/phone; optional validated `customerId` restricts invoices to one account.
 - Invoice Sharing & Client-Side PDF:
   - PDF/image rendering is decoupled from the API; there is no backend renderer. The current Docker image still includes unused legacy Chromium tooling.
   - Authenticated `GET /sales-invoices/:id/receipt` returns current customer/item names for client-side A4 PDF and A5-width PNG export; `GET /sales-invoices/:id/neighbors` returns both numeric invoice-order and same-customer neighbors.
@@ -251,8 +252,9 @@ Atomic sequence for sales invoice numbers.
 | Field | Type | Notes |
 |---|---|---|
 | customerId | ObjectId → Customer \| null | |
-| invoiceId | ObjectId → SalesInvoice \| null | null for standalone debt payments |
-| amount | number | EGP, > 0, rounded to 2 decimals |
+| invoiceId | ObjectId → SalesInvoice \| null | lifecycle link; null for standalone debt/advance payments |
+| sourceInvoiceId | ObjectId → SalesInvoice \| null | provenance of an invoice-created extra payment; independent lifecycle |
+| amount | number | positive finite EGP with at most two decimals |
 | method | string enum | `cash` \| `instapay` \| `vodafone_cash` \| `bank_transfer` \| `check`, default `cash` |
 | notes | string \| null | optional memo / check number / transaction reference |
 | recordedBy | ObjectId → User | |
@@ -269,8 +271,8 @@ Two shapes — they do **not** affect `Customer.balance` the same way:
    balance += 60 only; the Payment(40) is history, not a second balance
    mutation. On cancel, set `reversedAt` / `reversedBy` (do not delete).
 2. **Standalone debt payment** — `invoiceId` null, `customerId` set. Used
-   when a customer pays off part of an existing debt on a later date.
-   This **does** reduce `Customer.balance` by `amount`. *(Phase 5)*
+   for debt settlement or advance credit, including an invoice form’s excess payment.
+   This **does** reduce `Customer.balance` by `amount`, with no debt-based cap.
 
 Both shapes are logged in `AuditLog`. Active payment history should treat
 `reversedAt != null` as voided.
@@ -282,8 +284,9 @@ Both shapes are logged in `AuditLog`. Active payment history should treat
 | Field | Type | Notes |
 |---|---|---|
 | supplierId | ObjectId → Supplier | required |
-| purchaseId | ObjectId → PurchaseInvoice \| null | null for standalone debt payments |
-| amount | number | EGP, > 0, rounded to 2 decimals |
+| purchaseInvoiceId | ObjectId → PurchaseInvoice \| null | lifecycle link; null for standalone debt/advance payments |
+| sourcePurchaseInvoiceId | ObjectId → PurchaseInvoice \| null | provenance of a purchase-created extra payment; independent lifecycle |
+| amount | number | positive finite EGP with at most two decimals |
 | method | string enum | `cash` \| `instapay` \| `vodafone_cash` \| `bank_transfer` \| `check`, default `cash` |
 | notes | string \| null | optional memo / check number / transaction reference |
 | recordedBy | ObjectId → User | |
@@ -293,13 +296,13 @@ Both shapes are logged in `AuditLog`. Active payment history should treat
 
 Two shapes — they do **not** affect `Supplier.amountOwed` the same way:
 
-1. **Payment on a new purchase** — `purchaseId` set (captured while creating a
+1. **Payment on a new purchase** — `purchaseInvoiceId` set (captured while creating a
    `PurchaseInvoice` when `paid > 0`). Updates purchase invoice `paid` / `remaining`
    only. Does **not** change `Supplier.amountOwed` (debt was already set to
    that purchase’s `remaining` on save). On purchase cancel, set `reversedAt` / `reversedBy` (do not delete).
-2. **Standalone debt payment** — `purchaseId` null, `supplierId` set. Used
-   when paying off part of an existing supplier debt on a later date.
-   This **does** reduce `Supplier.amountOwed` by `amount`.
+2. **Standalone debt payment** — `purchaseInvoiceId` null, `supplierId` set. Used
+   for debt settlement or advance credit, including purchase-form excess.
+   This **does** reduce `Supplier.amountOwed` by `amount`, with no debt-based cap.
 
 Both shapes are logged in `AuditLog` (`supplier_payment_recorded`, `supplier_payment_cancelled`). Active payment history treats `reversedAt != null` as voided.
 
@@ -333,7 +336,7 @@ pointer back to the specific document here instead (see `AuditLog` below).
 | supplierId | ObjectId → Supplier | required |
 | lines | PurchaseInvoiceLine[] | embedded; at least one required |
 | total | number | server-computed subtotal |
-| paid | number | amount paid at create; default 0; `0 ≤ paid ≤ total` |
+| paid | number | invoice-allocated amount on create/edit; create defaults to 0; `0 ≤ paid ≤ total` |
 | remaining | number | `total - paid`; adds to `Supplier.amountOwed` |
 | status | string enum | `saved` \| `cancelled` |
 | notes | string \| null | optional memo / notes |
@@ -352,7 +355,14 @@ pointer back to the specific document here instead (see `AuditLog` below).
 - `per_cubic_meter`: increments `quantity × volume` where
   `volume = thickness × width × length` (m → m³, 6 dp).
 - Saving a purchase invoice with `paid > 0` transactionally creates an on-purchase
-  `SupplierPayment` record (`purchaseId` set, `supplierId` set).
+  `SupplierPayment` record (`purchaseInvoiceId` set, `supplierId` set).
+- Editing a saved purchase through `PATCH /purchases/:id` replaces its supplier,
+  lines, paid amount and notes. Old stock is reversed using the saved pricing
+  snapshot; new stock and totals use each item's current pricing mode. The
+  transaction adjusts the old/new supplier debt, reconciles the linked payment,
+  and audits `purchase_updated`. Unchanged inactive suppliers/items are allowed;
+  newly selected records must be active. The edit does not alter standalone
+  older-debt payments (`purchaseInvoiceId` null).
 - Cancelling a purchase invoice (`status = cancelled`) reverses the stock increment
   (deducts stock), reverses the `Supplier.amountOwed += remaining` applied at save,
   and voids any associated `SupplierPayment` records via `reversedAt` / `reversedBy`.
@@ -377,11 +387,7 @@ pointer back to the specific document here instead (see `AuditLog` below).
 ## Retired operating-expense data
 
 The operating-expense API and its `OperatingExpense` and `ExpenseCategory`
-collections are retired. They are not changed on startup. Inspect existing
-record counts with `npm run cleanup:expenses` (dry run), then explicitly run
-`npm run cleanup:expenses -- --apply --confirm=DELETE-EXPENSE-DATA` against the
-intended database to delete both collections. Expense/category audit entries in
-the shared `AuditLog` collection remain available.
+collections are retired. No cleanup script or package command is shipped. They are not removed on startup; any cleanup requires a separately reviewed maintenance operation. Expense/category audit entries in the shared `AuditLog` collection remain available.
 
 Invoice, customer payment, purchase, supplier payment, and dashboard filters
 also accept an inclusive Cairo `from`/`to` pair as an alternative to
@@ -399,7 +405,7 @@ with the item name in `summary`.
 | Field | Type | Notes |
 |---|---|---|
 | userId | ObjectId → User | |
-| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
+| action | string | e.g. `invoice_created`, `invoice_cancelled`, `payment_recorded`, `payment_cancelled`, `supplier_payment_recorded`, `supplier_payment_cancelled`, `stock_adjusted`, `purchase_created`, `purchase_updated`, `purchase_cancelled`, `price_changed`, `category_created`, `category_edited`, `category_deleted`, `item_created`, `item_edited`, `item_deleted`, `customer_created`, `customer_edited`, `customer_deleted`, `customer_merged`, `supplier_created`, `supplier_edited`, `supplier_deleted`, `supplier_merged`, `admin_created`, `admin_updated`, `admin_deleted` |
 | entityType | string | e.g. `SalesInvoice`, `Payment`, `SupplierPayment`, `Item`, `Category`, `Customer`, `Supplier`, `PurchaseInvoice`, `User` |
 | entityId | ObjectId | polymorphic reference to the affected record |
 | changes | `Record<string, { old: mixed, new: mixed }>` \| null | *(added)* per-field diff (`item_edited`, `stock_adjusted`, `customer_edited`, `supplier_edited`, `customer_merged`, `supplier_merged`, `*_deleted`, `admin_created`, `invoice_cancelled`, etc.) — keyed by field name so a single entry can capture multiple fields changing at once |
@@ -456,8 +462,7 @@ landlines and `0020` input are rejected. Unchanged legacy values are preserved;
 duplicate lookups include legacy international spellings. Supplied values remain
 unique among non-deleted records. Fresh databases
 use the partial customer index above. Application startup does not replace old
-indexes. The package-listed phone-index maintenance commands currently reference
-an absent script; they cannot be used in this checkout. See the
+indexes. No phone-index check/repair command is shipped in this checkout. See the
 [README maintenance note](../README.md#seed-data-development).
 
 Item create/update bodies accept `dimensionDefaults` with independent arrays for
@@ -492,3 +497,29 @@ POST /api/v1/items/:id/dimension-defaults accepts { dimension: thickness | width
 `GET /sales-invoices/:id/neighbors` retains nullable `previousId`/`nextId` for the same customer, ordered by createdAt and _id. It adds nullable `previousByNumberId`/`nextByNumberId` for all numeric INV-prefixed invoice numbers, including cancelled/cash sales and skipping gaps. The non-unique `invoice_number_navigation` index uses `{ invoiceNumber: 1 }` with `{ locale: "en", numericOrdering: true }`, matching the numeric neighbor queries. Existing number generation and records are unchanged.
 
 Authenticated and public receipt lines expose resolved `pricingModeSnapshot`, including the established legacy fallback. For stocked modes, `piecePrice` remains the saved piece/m³ rate. Clients calculate display-only cubic per-piece price from six-decimal meter volume × saved rate; explicit piece lines retain their saved rate even with dimensions. Free-amount lines display their item, optional note, and total, leaving quantity, dimensions, and unit price blank. Persisted line and invoice totals remain authoritative.
+
+
+## Current balances, financial summaries, and advance credit
+
+- Customer `balance` and Supplier `amountOwed` are the only account balance fields. Create accepts an optional starting value (default zero); PATCH accepts the actual desired current value. Values must be signed finite EGP amounts with at most two decimal places. Positive means customer owes the store / store owes the supplier; negative means customer holds credit with the store / store holds credit with the supplier. `openingBalance` is no longer accepted or returned.
+- Balance corrections read the latest account inside a MongoDB transaction and save the requested current value. The existing `customer_edited` / `supplier_edited` audit entry records old/new balance and `balanceAdjustment: { old: 0, new: newBalance - oldBalance }`, together with actor and timestamp. Audit and account writes commit or roll back together. No-op values create no adjustment. Contact-only PATCH requests omit unchanged balance fields. Invoice/payment amounts and financial totals are unaffected by corrections.
+- GET detail returns `financialSummary: { totalInvoiced, totalPaid }`, independent of history pagination. Invoice totals exclude cancelled invoices; payment totals count active payments once and exclude reversals. Merges sum current balances only. No opening-value inference, compatibility alias, migration, or backfill is performed, and no existing database records are rewritten.
+- Sales-invoice listing accepts an optional validated `customerId` filter; purchase listing retains `supplierId`.
+- Sales/purchase create and update accept optional `accountPaymentAmount` (finite nonnegative, at most two decimals). This is independent from `paid`, which stays in `[0, net]`. Positive additional amounts create active standalone Payment/SupplierPayment rows with null lifecycle links (and a source-invoice provenance marker) and subtract from the account in the same transaction and audit trail. Purchase creation accepts the old `existingDebtPayment` name as an exclusive alias without a debt cap. Cash sales accept no positive account payment.
+- Standalone payment amounts are positive, finite two-decimal EGP; there is no maximum based on debt and no requirement for a positive account balance. Accounts must be active. Negative running balance is account credit. Deletion remains blocked for every nonzero balance.
+- Invoice edit reconciles invoice payment only and adds an account payment only when explicitly supplied. Invoice cancellation and reassignment preserve independent account payments. Cancellation of such a payment separately adds its amount back to account debt. Invoice details/modal/receipt/print/PDF show combined invoice plus origin-linked active account payments, with a conditional breakdown. Persisted `paid` and `remaining` retain invoice settlement semantics.
+- Future invoices add their unpaid amount to the signed account balance. Credit is not automatically allocated to invoice `paid`.
+
+
+### Additional payment provenance and invoice display
+
+Payment has optional `sourceInvoiceId` referencing the sales invoice that recorded an additional account payment. SupplierPayment has optional `sourcePurchaseInvoiceId` for purchases. These markers do not change standalone lifecycle behavior: `invoiceId`/`purchaseInvoiceId` remain null. Sources are server-written during invoice creation/editing and included in payment audit changes. No new index or live backfill is applied.
+
+Sales and purchase invoice responses, plus sales public/receipt responses, expose `accountPaymentAmount`: the sum of active standalone rows whose source points to that invoice and whose party matches its current customer/supplier. Invoice lists aggregate once per page. Reversed extras are excluded; extras left with a previous party after reassignment are excluded from the new party's invoice. Cash sales and records without source provenance return zero. Historical unmarked payments cannot be safely associated by dates or amounts and are not guessed.
+
+`paid` remains the invoice allocation; `remaining = net - paid` remains nonnegative. The displayed paid total is `paid + accountPaymentAmount`, with `(invoice paid + extra previous-debt payment)` shown only when the extra is positive. Reading or editing an invoice does not replay its existing extra.
+
+
+Payment read responses expose optional `sourceInvoiceId`; supplier-payment responses expose optional `sourcePurchaseInvoiceId`. Frontend payment histories use these server-owned markers to label additional account payments without rewriting persisted notes. Blank standalone debt-payment notes may receive the same label based on their existing standalone type. This does not infer invoice provenance, combine payment rows, or change balances.
+
+Customer listing `GET /api/v1/customers?q=...` searches customer names only (case-insensitive escaped literal matching). Phone numbers do not match this filter. This shared endpoint serves sales-invoice customer selection, customers, and customer-payment lookup.
