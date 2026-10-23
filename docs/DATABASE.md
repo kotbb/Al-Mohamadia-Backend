@@ -126,7 +126,6 @@ when a new one is issued).
 
 | Field | Type | Notes |
 |---|---|---|
-| code | string | |
 | name | string | |
 | categoryId | ObjectId → Category | |
 | isWood | boolean | |
@@ -146,17 +145,15 @@ Manual stock corrections are `stock_adjusted` rows on `AuditLog`.
 
 **Rules:** `unitPrice`/`cost` changes must append an `ItemPriceHistory`
 entry, never a silent overwrite. `stockQuantity` may be set on create.
-For `free_amount`, item creation requires name, code, and category but no
+For `free_amount`, item creation requires name and category but no
 editable price, cost, dimensions, stock, or reorder threshold. Required numeric
-schema fields are stored as zero. The item is selectable only on sales invoices;
-purchase and inventory operations reject it. Pricing mode is immutable.
+schema fields are stored as zero. The item is selectable on sales and purchase
+invoices; inventory operations reject it. Pricing mode is immutable.
 Later manual corrections go through `POST /inventory/adjustments` and are
 stored on `AuditLog` (`stockQuantity` and `reason` in `changes`). Sales and
-purchases change stock on their own documents. `code` is unique among
-non-deleted items.
+purchases change stock on their own documents. Item references use `_id`; names do not have a uniqueness constraint. Item codes are no longer part of the schema.
 
-**Indexes:** partial unique index on `code` where `{ isDeleted: false }`;
-index on `{ categoryId: 1, isDeleted: 1 }`.
+**Indexes:** index on `{ categoryId: 1, isDeleted: 1 }`, plus the default `_id` index. Existing code indexes are not automatically dropped when the schema changes; follow [manual item-code cleanup](REMOVE-ITEM-CODES.md) before resuming writes with the updated applications.
 
 ---
 
@@ -226,7 +223,7 @@ unique partial on `pdfShareToken` where token is a string.
 |---|---|---|
 | itemId | ObjectId → Item | |
 | quantity | number | must be `> 0`; always `1` for `free_amount` |
-| width, length, thickness | number (m) \| null | optional descriptive dimensions for piece items; all required for cubic; every supplied value positive and finite |
+| width, length, thickness | number (m) \| null | optional descriptive dimensions for piece items; all required for cubic; absent on free-amount requests and stored null; every supplied value positive and finite |
 | pricingModeSnapshot | string enum | server-controlled pricing mode captured when line is saved; absent only on legacy lines |
 | piecePrice | number | unit price snapshot for stocked modes; entered positive EGP amount for `free_amount` |
 | costPriceSnapshot | number | copied from live `Item.cost` for stocked modes; zero for `free_amount` |
@@ -349,11 +346,17 @@ pointer back to the specific document here instead (see `AuditLog` below).
 **Indexes:** unique `invoiceNumber`; `createdAt`; `supplierId`; `status`.
 
 **Rules:**
-- Saving a purchase invoice increases `Item.stockQuantity` for each line
+- Saving a purchase invoice increases `Item.stockQuantity` for each stocked line
   and increases `Supplier.amountOwed` by `remaining`.
 - `per_piece`: increments `quantity`.
 - `per_cubic_meter`: increments `quantity × volume` where
   `volume = thickness × width × length` (m → m³, 6 dp).
+- `free_amount`: stores quantity `1`, entered positive EGP amount as `unitCost`,
+  and null dimensions. Request dimensions and any other quantity are rejected.
+  Create, edit and cancellation make no stock or catalog-price writes for these lines.
+  Saved free-amount purchase totals reduce today's and selected-period gross profit
+  using purchase `createdAt` and Cairo date boundaries, independently of payment
+  and sales dates. Cancelled purchases are excluded; negative profit is retained.
 - Saving a purchase invoice with `paid > 0` transactionally creates an on-purchase
   `SupplierPayment` record (`purchaseInvoiceId` set, `supplierId` set).
 - Editing a saved purchase through `PATCH /purchases/:id` replaces its supplier,
@@ -375,11 +378,11 @@ pointer back to the specific document here instead (see `AuditLog` below).
 | Field | Type | Notes |
 |---|---|---|
 | itemId | ObjectId → Item | |
-| quantity | number | must be `> 0` |
+| quantity | number | must be `> 0`; always `1` for `free_amount` |
 | width, length, thickness | number (m) \| null | optional descriptive dimensions for piece items; all required for cubic; every supplied value positive and finite |
 | pricingModeSnapshot | string enum | server-controlled pricing mode captured when line is saved; absent only on legacy lines |
-| unitCost | number | unit cost snapshot at time of purchase (`> 0`) |
-| lineTotal | number | `per_piece`: `quantity × unitCost`; `per_cubic_meter`: `quantity × volume × unitCost` |
+| unitCost | number | unit cost snapshot for stocked lines; independently entered amount for `free_amount`; positive EGP, at most 2 dp |
+| lineTotal | number | `per_piece`: `quantity × unitCost`; `per_cubic_meter`: `quantity × volume × unitCost`; `free_amount`: entered amount |
 | note | string \| null | optional |
 
 ---

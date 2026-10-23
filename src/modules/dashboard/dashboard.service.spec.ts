@@ -7,6 +7,7 @@ import { formatCairoDate } from '../../shared/utils/period/cairo-period.util';
 import { Customer } from '../customers/schemas/customer.schema';
 import { Item } from '../items/schemas/item.schema';
 import { Payment } from '../payments/schemas/payment.schema';
+import { PurchaseInvoice } from '../purchases/schemas/purchase-invoice.schema';
 import { SalesInvoice } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardService } from './dashboard.service';
 import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
@@ -31,6 +32,7 @@ describe('DashboardService', () => {
   let itemModel: {
     find: jest.Mock;
   };
+  let purchaseInvoiceModel: { aggregate: jest.Mock };
 
   const mockQuery = <T>(val: T) => ({
     select: jest.fn().mockReturnThis(),
@@ -38,6 +40,7 @@ describe('DashboardService', () => {
   });
 
   beforeEach(async () => {
+    purchaseInvoiceModel = { aggregate: jest.fn().mockResolvedValue([]) };
     salesInvoiceModel = {
       aggregate: jest.fn().mockResolvedValue([]),
       find: jest.fn(),
@@ -59,6 +62,7 @@ describe('DashboardService', () => {
         { provide: getModelToken(Payment.name), useValue: paymentModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: getModelToken(Item.name), useValue: itemModel },
+        { provide: getModelToken(PurchaseInvoice.name), useValue: purchaseInvoiceModel },
       ],
     }).compile();
 
@@ -78,6 +82,17 @@ describe('DashboardService', () => {
   };
 
   describe('getDashboard validation & defaults', () => {
+    it('subtracts saved free-amount purchases independently for today and selected period, allowing losses', async () => {
+      stubEmptyAggregates();
+      purchaseInvoiceModel.aggregate
+        .mockResolvedValueOnce([{ expenseSum: 45.25 }])
+        .mockResolvedValueOnce([{ expenseSum: 80.5 }]);
+      const result = await service.getDashboard({ period: SalesInvoicePeriod.MONTH, date: '2026-03-15' });
+      expect(result.today.estimatedProfit).toBe(-45.25);
+      expect(result.periodFinancials.estimatedGrossProfit).toBe(-80.5);
+      expect(result.periodFinancials.sales).toBe(0);
+      expect(result.today.collected).toBe(0);
+    });
     it('defaults to month + Cairo today when period and date are omitted', async () => {
       stubEmptyAggregates();
 
@@ -301,7 +316,7 @@ describe('DashboardService', () => {
       expect(result.salesSeries[0].sales).toBe(280);
     });
 
-    it('returns top selling items with item name/code', async () => {
+    it('returns top selling items with item names and no code', async () => {
       const itemId = '507f1f77bcf86cd799439011';
       salesInvoiceModel.aggregate
         .mockResolvedValueOnce([])
@@ -321,7 +336,6 @@ describe('DashboardService', () => {
           {
             _id: { toString: () => itemId },
             name: 'خشب سويد',
-            code: 'WOOD-01',
           },
         ]),
       );
@@ -335,13 +349,12 @@ describe('DashboardService', () => {
       expect(result.topSellingItems[0]).toEqual({
         itemId,
         name: 'خشب سويد',
-        code: 'WOOD-01',
         quantity: 4,
         revenue: 1200,
       });
     });
 
-    it('returns null name/code when item is missing', async () => {
+    it('returns a null name when item is missing', async () => {
       const itemId = '507f1f77bcf86cd799439011';
       salesInvoiceModel.aggregate
         .mockResolvedValueOnce([])
@@ -366,7 +379,6 @@ describe('DashboardService', () => {
       expect(result.topSellingItems[0]).toEqual({
         itemId,
         name: null,
-        code: null,
         quantity: 1,
         revenue: 100,
       });

@@ -88,7 +88,7 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 - Authenticated receipt JSON for frontend PNG A5 / PDF A4 export, with numeric and same-customer previous/next navigation
 - Export rendering runs in the frontend; the API does not generate PDF or PNG files
 - Server-controlled pricing mode snapshots preserve piece/cubic/free-amount behavior during updates and reversals; legacy lines retain fallback support
-- Free-amount lines take a positive EGP amount and optional note, with no stock movement or cost; purchases reject these items
+- Free-amount sales and purchase lines take an independently entered positive EGP amount and optional note, with no stock movement or catalog cost/price
 - Public/private receipt lines include resolved `pricingModeSnapshot`; clients display cubic volume × saved rate as price per piece without changing stored rates/totals
 
 ### Payments (`/api/v1/payments`)
@@ -118,6 +118,7 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 ### Dashboard (`/api/v1/dashboard`)
 
 - Today's sales, estimated gross profit, collections, and invoice count
+- Gross profit deducts stocked-item sales costs and saved free-amount purchase totals from net sales, using each invoice's creation period; supplier payments do not deduct costs again
 - Customer debt totals and selected-period financial summaries, chart series, and top sellers
 - Period filter: `day`, `week`, `month`, or `year`; alternatively an inclusive Cairo `from`/`to` range
 
@@ -356,7 +357,7 @@ Supplier payment list query params: `supplierId`, `purchaseInvoiceId`, `status`,
 | `GET`  | `/api/v1/inventory/valuation`   | Both | Stock valuation            |
 | `POST` | `/api/v1/inventory/adjustments` | Both | Record a manual adjustment |
 
-Stock list query params: `categoryId`, `stockStatus`, `q`, `page`, `limit`.
+Stock list query params: `categoryId`, `stockStatus`, `q`, `page`, `limit`, `paginationMode` (`items` by default, or `categories`). Category mode defaults to five complete matching categories per page, ordered by category `createdAt` ascending, then ID for ties; `limit` counts categories rather than items. Its metadata adds `paginationMode: "categories"`, `totalItems`, and `totalPages`; `meta.total` counts matching categories. Search/status filters apply before pagination, while KPI summaries retain their existing base-filter semantics. A large category is never split. Legacy item pagination keeps its existing response metadata.
 
 A manual adjustment updates `Item.stockQuantity` and writes a `stock_adjusted` audit row. List those rows with `GET /api/v1/audit-logs`.
 
@@ -416,15 +417,12 @@ linting use `npx eslint "{src,test}/**/*.ts"`; `npm run lint` auto-fixes files.
 
 ## Seed data (development)
 
-Requires `.env` with `MONGO_URI`. Invoice, purchase, and inventory seeds expect a user to already exist.
+The former catalog, party, invoice, purchase and inventory seed scripts have been removed; no seed commands are shipped. Create development examples through the application/API. Initial user provisioning is arranged separately; no public registration endpoint is available.
 
-```bash
-npm run seed:catalog      # categories and sample items with meter defaults
-npm run seed:parties      # sample customers and suppliers
-npm run seed:invoices     # sample cash and customer sales invoices
-npm run seed:purchases    # sample purchase invoices
-npm run seed:inventory    # sample stock adjustments
-```
+No seeds or migrations run automatically at application startup. Transactional tests create isolated temporary MongoDB replica sets and do not use the configured application database.
 
-Use mock catalog/party/invoice/purchase/inventory seeds only against an intended
-development database. No seeds or migrations run automatically at application startup.
+### Item identification
+
+Items use database IDs for references and names/categories for display. Item codes are no longer generated, accepted by item create/update requests, or included in item, inventory or dashboard top-selling responses. Items and Inventory search by name; invoice selectors also match category names. Duplicate item names remain allowed.
+
+Existing code fields and indexes require [manual cleanup](docs/REMOVE-ITEM-CODES.md); application startup does not remove them.

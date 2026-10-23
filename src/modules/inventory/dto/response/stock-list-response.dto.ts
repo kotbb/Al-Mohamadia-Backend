@@ -7,7 +7,6 @@ export class StockItemCategoryDto {
 
 export class StockItemResponseDto {
   id: string;
-  code: string;
   name: string;
   categoryId: string;
   category: StockItemCategoryDto | null;
@@ -39,6 +38,9 @@ export class StockListMetaDto {
   page: number;
   limit: number;
   total: number;
+  paginationMode?: 'categories';
+  totalItems?: number;
+  totalPages?: number;
 }
 
 export class StockListResponseDto {

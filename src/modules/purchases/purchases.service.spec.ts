@@ -71,7 +71,6 @@ describe('PurchasesService', () => {
 
   const makePieceItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemIdPiece },
-    code: 'WOOD-PIECE-01',
     name: 'لوح خشب حبيبي',
     pricingMode: PricingMode.PER_PIECE,
     unitPrice: 150,
@@ -84,7 +83,6 @@ describe('PurchasesService', () => {
 
   const makeCubicItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemIdCubic },
-    code: 'WOOD-CUBIC-01',
     name: 'خشب سويد',
     pricingMode: PricingMode.PER_CUBIC_METER,
     unitPrice: 12000,
@@ -463,14 +461,47 @@ describe('PurchasesService', () => {
       await expect(service.create(dto, actor)).rejects.toThrow(BadRequestException);
     });
 
-    it('rejects free-amount items before creating a purchase', async () => {
+    it('creates canonical free-amount lines without writing stock', async () => {
       supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));
       itemModel.find.mockReturnValue(mockQuery([makePieceItem({ pricingMode: PricingMode.FREE_AMOUNT })]));
-      await expect(
-        service.create({ supplierId, lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 10 }] }, actor),
-      ).rejects.toThrow(BadRequestException);
-      expect(purchaseInvoiceModel.create).not.toHaveBeenCalled();
+      purchaseInvoiceModel.create.mockImplementation((rows: Record<string, unknown>[]) => [
+        {
+          ...rows[0],
+          _id: purchaseId,
+          get: () => undefined,
+        },
+      ]);
+      const result = await service.create(
+        { supplierId, lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 10.25 }] },
+        actor,
+      );
+      expect(result.lines[0]).toMatchObject({
+        quantity: 1,
+        unitCost: 10.25,
+        lineTotal: 10.25,
+        pricingModeSnapshot: PricingMode.FREE_AMOUNT,
+        width: null,
+        length: null,
+        thickness: null,
+      });
+      expect(itemModel.updateOne).not.toHaveBeenCalled();
+      expect(session.commitTransaction).toHaveBeenCalled();
     });
+
+    it.each([{ quantity: 2 }, { width: 1 }, { unitCost: 1.234 }, { unitCost: NaN }, { unitCost: 0 }])(
+      'rejects invalid free-amount lines %j',
+      async (overrides) => {
+        supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));
+        itemModel.find.mockReturnValue(mockQuery([makePieceItem({ pricingMode: PricingMode.FREE_AMOUNT })]));
+        await expect(
+          service.create(
+            { supplierId, lines: [{ itemId: itemIdPiece, quantity: 1, unitCost: 10, ...overrides }] },
+            actor,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(purchaseInvoiceModel.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('fails if cubic-meter item is missing dimensions', async () => {
       supplierModel.findOne.mockReturnValue(mockQuery(makeSupplier()));

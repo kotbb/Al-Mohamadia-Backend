@@ -20,12 +20,6 @@ export class UpdateItemDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @IsNotEmpty()
-  code?: string;
-
-  @TrimText()
-  @ValidateIf((_, value) => value !== undefined)
-  @IsString()
-  @IsNotEmpty()
   name?: string;
 
   @ValidateIf((_, value) => value !== undefined)

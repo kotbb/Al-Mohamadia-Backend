@@ -32,7 +32,6 @@ export class DashboardSalesSeriesPointDto {
 export class DashboardTopSellingItemDto {
   itemId: string;
   name: string | null;
-  code: string | null;
   quantity: number;
   revenue: number;
 }

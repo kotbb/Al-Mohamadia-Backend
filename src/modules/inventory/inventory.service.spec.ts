@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Types } from 'mongoose';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
@@ -22,6 +23,7 @@ describe('InventoryService', () => {
   };
   let categoryModel: {
     findOne: jest.Mock;
+    find: jest.Mock;
   };
   let auditService: { log: jest.Mock };
   let connection: { startSession: jest.Mock };
@@ -43,9 +45,8 @@ describe('InventoryService', () => {
 
   const makeItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemId },
-    code: 'WOOD-01',
     name: 'خشب سويد',
-    categoryId: { _id: { toString: () => categoryId }, name: 'أخشاب' },
+    categoryId: new Types.ObjectId(categoryId),
     isWood: true,
     pricingMode: PricingMode.PER_PIECE,
     unitPrice: 150,
@@ -62,6 +63,8 @@ describe('InventoryService', () => {
   const mockQuery = <T>(val: T) => ({
     session: jest.fn().mockReturnThis(),
     populate: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -89,6 +92,7 @@ describe('InventoryService', () => {
 
     categoryModel = {
       findOne: jest.fn(),
+      find: jest.fn().mockReturnValue(mockQuery([{ _id: new Types.ObjectId(categoryId), name: 'أخشاب' }])),
     };
 
     auditService = {
@@ -183,6 +187,132 @@ describe('InventoryService', () => {
   });
 
   describe('getStockList', () => {
+    const categoryRows = () =>
+      ['Zinc', 'خشب', 'Alpha', 'Beta', 'Gamma', 'Delta'].map((name, index) => ({
+        _id: new Types.ObjectId(`507f1f77bcf86cd7994390${index.toString().padStart(2, '0')}`),
+        name,
+        itemsCount: index === 0 ? 30 : 1,
+      }));
+
+    it('pages complete categories in database creation order without an item limit', async () => {
+      const rows = categoryRows();
+      const selected = rows.slice(0, 5);
+      const raw = selected.flatMap((category) =>
+        Array.from({ length: category.itemsCount }, () => makeItem({ categoryId: category._id })),
+      );
+      const findQuery = mockQuery(raw.reverse());
+      itemModel.find.mockReturnValue(findQuery);
+      itemModel.aggregate.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+      const result = await service.getStockList({ paginationMode: 'categories' });
+      expect(result.meta).toEqual({
+        page: 1,
+        limit: 5,
+        total: 6,
+        paginationMode: 'categories',
+        totalItems: 35,
+        totalPages: 2,
+      });
+      expect(result.items).toHaveLength(selected.reduce((sum, category) => sum + category.itemsCount, 0));
+      expect([...new Set(result.items.map((item) => item.category?.name))]).toEqual(
+        selected.map((category) => category.name),
+      );
+      expect(itemModel.aggregate.mock.calls[0][0]).toContainEqual({
+        $sort: { missingCategory: 1, createdAt: 1, _id: 1 },
+      });
+      expect(findQuery.lean).toHaveBeenCalled();
+      expect(findQuery.populate).not.toHaveBeenCalled();
+      expect(categoryModel.find).not.toHaveBeenCalled();
+      expect(findQuery.limit).not.toHaveBeenCalled();
+      expect(findQuery.skip).not.toHaveBeenCalled();
+      expect(findQuery.sort).toHaveBeenCalledWith({ stockQuantity: 1, createdAt: -1, _id: 1 });
+      expect(itemModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryId: { $in: selected.map((category) => category._id) } }),
+      );
+    });
+
+    it('filters matching categories before paging and keeps KPI status counts independent', async () => {
+      itemModel.aggregate
+        .mockResolvedValueOnce(categoryRows().slice(0, 1))
+        .mockResolvedValueOnce([{ totalItems: 40, normalStockCount: 10 }]);
+      itemModel.find.mockReturnValue(mockQuery([]));
+      const result = await service.getStockList({
+        paginationMode: 'categories',
+        categoryId,
+        q: 'A.*',
+        stockStatus: StockStatusFilter.NEGATIVE_STOCK,
+      });
+      const groupPipeline = itemModel.aggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
+      const kpiPipeline = itemModel.aggregate.mock.calls[1][0] as Array<{ $match?: Record<string, unknown> }>;
+      expect(groupPipeline[0].$match).toMatchObject({
+        categoryId: new Types.ObjectId(categoryId),
+        stockQuantity: { $lt: 0 },
+        pricingMode: { $ne: PricingMode.FREE_AMOUNT },
+        name: { $regex: 'A\\.\\*', $options: 'i' },
+      });
+      expect(kpiPipeline[0].$match).not.toHaveProperty('stockQuantity');
+      expect(result.summary.totalItems).toBe(40);
+    });
+
+    it.each([{ rows: [] }, { rows: categoryRows() }])(
+      'returns empty items for empty or out of range category pages',
+      async ({ rows }) => {
+        itemModel.aggregate.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+        const result = await service.getStockList({ paginationMode: 'categories', page: 20 });
+        expect(result.items).toEqual([]);
+        expect(result.meta.total).toBe(rows.length);
+        expect(result.meta.totalPages).toBe(rows.length ? 2 : 1);
+        expect(itemModel.find).not.toHaveBeenCalled();
+      },
+    );
+
+    it('preserves legacy item pagination defaults and metadata, including orphan categories', async () => {
+      const findQuery = mockQuery([makeItem({ categoryId: null })]);
+      itemModel.find.mockReturnValue(findQuery);
+      itemModel.countDocuments.mockReturnValue(mockQuery(26));
+      itemModel.aggregate.mockResolvedValue([]);
+      const result = await service.getStockList({});
+      expect(result.meta).toEqual({ page: 1, limit: 10, total: 26 });
+      expect(findQuery.limit).toHaveBeenCalledWith(10);
+      expect(result.items[0].category).toBeNull();
+    });
+
+    it('maps projected plain records, dates and schema defaults without document methods', async () => {
+      const createdAt = new Date('2026-01-01T00:00:00Z');
+      const updatedAt = new Date('2026-01-02T00:00:00Z');
+      const item = {
+        _id: new Types.ObjectId(itemId),
+        categoryId: new Types.ObjectId(categoryId),
+        name: 'Lean stock',
+        pricingMode: PricingMode.PER_PIECE,
+        createdAt,
+        updatedAt,
+      };
+      const findQuery = mockQuery([item]);
+      itemModel.find.mockReturnValue(findQuery);
+      itemModel.countDocuments.mockReturnValue(mockQuery(1));
+      itemModel.aggregate.mockResolvedValue([]);
+      const result = await service.getStockList({});
+      expect(findQuery.lean).toHaveBeenCalled();
+      expect(findQuery.populate).not.toHaveBeenCalled();
+      expect(findQuery.select.mock.calls[0][0]).not.toContain('dimensionDefaults');
+      expect(result.items[0]).toMatchObject({
+        id: itemId,
+        categoryId,
+        category: { id: categoryId, name: 'أخشاب' },
+        createdAt,
+        updatedAt,
+        stockQuantity: 0,
+        reorderThreshold: 0,
+        unitPrice: 0,
+        cost: 0,
+        valuationAtCost: 0,
+        valuationAtSellingPrice: 0,
+        isWood: false,
+        isActive: true,
+        isOutOfStock: true,
+      });
+    });
+
     it('returns paginated stock list with computed flags and KPI summary cards', async () => {
       const normalItem = makeItem({ stockQuantity: 20, reorderThreshold: 5 });
       const lowStockItem = makeItem({ _id: { toString: () => 'item2' }, stockQuantity: 3, reorderThreshold: 5 });

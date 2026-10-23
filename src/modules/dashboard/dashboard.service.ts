@@ -5,6 +5,7 @@ import type {
   SalesCogsAgg,
   CollectedAgg,
   DebtAgg,
+  PurchaseExpenseAgg,
 } from './types/dashboard-aggregation.types';
 import {
   buildSalesHeaderPipeline,
@@ -12,6 +13,7 @@ import {
   buildCollectedPipeline,
   buildDebtPipeline,
   buildTopSellingItemsPipeline,
+  buildFreeAmountPurchaseExpensePipeline,
 } from './utils/dashboard-aggregation.util';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -32,6 +34,7 @@ import { SalesInvoice, SalesInvoiceDocument } from '../sales-invoices/schemas/sa
 import { DashboardResponseDto } from './dto/response/dashboard-response.dto';
 import { GetDashboardQueryDto } from './dto/request/get-dashboard-query.dto';
 import { dashboardCustomBuckets } from './utils/dashboard-custom-buckets.util';
+import { PurchaseInvoice, PurchaseInvoiceDocument } from '../purchases/schemas/purchase-invoice.schema';
 
 @Injectable()
 export class DashboardService {
@@ -44,6 +47,8 @@ export class DashboardService {
     private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Item.name)
     private readonly itemModel: Model<ItemDocument>,
+    @InjectModel(PurchaseInvoice.name)
+    private readonly purchaseInvoiceModel: Model<PurchaseInvoiceDocument>,
   ) {}
 
   public async getDashboard(query: GetDashboardQueryDto): Promise<DashboardResponseDto> {
@@ -55,18 +60,33 @@ export class DashboardService {
     const todayIso = formatCairoDate(new Date());
     const todayRange = cairoPeriodRange(SalesInvoicePeriod.DAY, todayIso);
 
-    const [todaySalesAgg, collectedAgg, debtAgg, periodInvoices, topItemsAgg, periodSalesAgg] = await Promise.all([
+    const [
+      todaySalesAgg,
+      collectedAgg,
+      debtAgg,
+      periodInvoices,
+      topItemsAgg,
+      periodSalesAgg,
+      todayExpenses,
+      periodExpenses,
+    ] = await Promise.all([
       this.aggregateTodaySales(todayRange.from, todayRange.to),
       this.aggregateCollected(todayRange.from, todayRange.to),
       this.aggregateDebt(),
       this.fetchPeriodSavedInvoices(periodRange.from, periodRange.to),
       this.aggregateTopSellingItems(periodRange.from, periodRange.to),
       this.aggregateTodaySales(periodRange.from, periodRange.to),
+      this.aggregatePurchaseExpenses(todayRange.from, todayRange.to),
+      this.aggregatePurchaseExpenses(periodRange.from, periodRange.to),
     ]);
 
     const sales = roundMoney(todaySalesAgg.totalSum - todaySalesAgg.discountSum);
-    const estimatedProfit = roundMoney(todaySalesAgg.totalSum - todaySalesAgg.discountSum - todaySalesAgg.cogsSum);
-    const periodGrossProfit = roundMoney(periodSalesAgg.totalSum - periodSalesAgg.discountSum - periodSalesAgg.cogsSum);
+    const estimatedProfit = roundMoney(
+      todaySalesAgg.totalSum - todaySalesAgg.discountSum - todaySalesAgg.cogsSum - todayExpenses,
+    );
+    const periodGrossProfit = roundMoney(
+      periodSalesAgg.totalSum - periodSalesAgg.discountSum - periodSalesAgg.cogsSum - periodExpenses,
+    );
 
     const salesSeries = buckets.map((bucket) => {
       let bucketSales = 0;
@@ -91,7 +111,7 @@ export class DashboardService {
       itemIds.length > 0
         ? await this.itemModel
             .find({ _id: { $in: itemIds } })
-            .select('name code')
+            .select('name')
             .exec()
         : [];
     const itemMap = new Map(items.map((item) => [item._id.toString(), item]));
@@ -102,7 +122,6 @@ export class DashboardService {
       return {
         itemId: id,
         name: item?.name ?? null,
-        code: item?.code ?? null,
         quantity: roundMoney(row.quantity),
         revenue: roundMoney(row.revenue),
       };
@@ -196,6 +215,13 @@ export class DashboardService {
   private async aggregateCollected(from: Date, to: Date): Promise<number> {
     const agg = await this.paymentModel.aggregate<CollectedAgg>(buildCollectedPipeline(from, to));
     return agg[0]?.totalAmount ?? 0;
+  }
+
+  private async aggregatePurchaseExpenses(from: Date, to: Date): Promise<number> {
+    const agg = await this.purchaseInvoiceModel.aggregate<PurchaseExpenseAgg>(
+      buildFreeAmountPurchaseExpensePipeline(from, to),
+    );
+    return agg[0]?.expenseSum ?? 0;
   }
 
   private async aggregateDebt(): Promise<DebtAgg> {

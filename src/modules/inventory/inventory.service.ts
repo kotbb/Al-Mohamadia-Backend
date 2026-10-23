@@ -13,6 +13,10 @@ import { ListStockQueryDto } from './dto/request/list-stock-query.dto';
 import { StockItemResponseDto, StockListResponseDto } from './dto/response/stock-list-response.dto';
 import { StockStatusFilter } from './enums/stock-status-filter.enum';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
+import type { StockCategoryCount, StockReadItem, StockReadPage } from './types/stock-read.types';
+
+const STOCK_READ_FIELDS =
+  '_id name categoryId isWood pricingMode unitPrice cost stockQuantity reorderThreshold isActive createdAt updatedAt';
 
 @Injectable()
 export class InventoryService {
@@ -105,7 +109,7 @@ export class InventoryService {
 
     if (query.q?.trim()) {
       const escaped = query.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      baseFilter.$or = [{ name: { $regex: escaped, $options: 'i' } }, { code: { $regex: escaped, $options: 'i' } }];
+      baseFilter.name = { $regex: escaped, $options: 'i' };
     }
 
     // Apply stockStatus filter to query
@@ -127,19 +131,13 @@ export class InventoryService {
     }
 
     const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 10, 100);
-    const skip = (page - 1) * limit;
+    const limit = Math.min(query.limit ?? (query.paginationMode === 'categories' ? 5 : 10), 100);
 
     // Parallel execution: fetch paginated items, count filtered, and aggregate stock KPI counts across baseFilter
-    const [rawItems, total, kpiAgg] = await Promise.all([
-      this.itemModel
-        .find(filter)
-        .populate('categoryId', 'name')
-        .sort({ stockQuantity: 1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.itemModel.countDocuments(filter).exec(),
+    const [stockPage, kpiAgg] = await Promise.all([
+      query.paginationMode === 'categories'
+        ? this.getCategoryStockPage(filter, page, limit)
+        : this.getItemStockPage(filter, page, limit),
       this.itemModel.aggregate<{
         totalItems: number;
         lowStockCount: number;
@@ -196,55 +194,127 @@ export class InventoryService {
             normalStockCount: 0,
           };
 
-    const items: StockItemResponseDto[] = rawItems.map((item) => {
-      const categoryDoc = item.categoryId as unknown as CategoryDocument | null;
-      const stock = item.stockQuantity;
-      const threshold = item.reorderThreshold;
-
-      const isLowStock = stock > 0 && stock <= threshold;
-      const isOutOfStock = stock === 0;
-      const isNegativeStock = stock < 0;
-
-      const positiveStock = stock > 0 ? stock : 0;
-      const valuationAtCost = roundMoney(positiveStock * item.cost);
-      const valuationAtSellingPrice = roundMoney(positiveStock * item.unitPrice);
-
-      return {
-        id: item._id.toString(),
-        code: item.code,
-        name: item.name,
-        categoryId: categoryDoc ? categoryDoc._id.toString() : item.categoryId.toString(),
-        category: categoryDoc
-          ? {
-              id: categoryDoc._id.toString(),
-              name: categoryDoc.name,
-            }
-          : null,
-        isWood: item.isWood,
-        pricingMode: item.pricingMode,
-        unitPrice: item.unitPrice,
-        cost: item.cost,
-        stockQuantity: item.stockQuantity,
-        reorderThreshold: item.reorderThreshold,
-        isActive: item.isActive,
-        isLowStock,
-        isOutOfStock,
-        isNegativeStock,
-        valuationAtCost,
-        valuationAtSellingPrice,
-        createdAt: item.get('createdAt') as Date | undefined,
-        updatedAt: item.get('updatedAt') as Date | undefined,
-      };
-    });
+    const items = stockPage.items.map((item) => this.toStockItemResponse(item, stockPage.categories));
 
     return {
       items,
+      meta: stockPage.meta,
+      summary,
+    };
+  }
+
+  private async getItemStockPage(filter: Record<string, unknown>, page: number, limit: number): Promise<StockReadPage> {
+    const [items, total] = await Promise.all([
+      this.itemModel
+        .find(filter)
+        .select(STOCK_READ_FIELDS)
+        .sort({ stockQuantity: 1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean<StockReadItem[]>()
+        .exec(),
+      this.itemModel.countDocuments(filter).exec(),
+    ]);
+    const categoryIds = [...new Set(items.flatMap((item) => (item.categoryId ? [item.categoryId.toString()] : [])))];
+    const categories = categoryIds.length
+      ? await this.categoryModel
+          .find({ _id: { $in: categoryIds } })
+          .select('_id name')
+          .lean<Array<{ _id: Types.ObjectId; name: string }>>()
+          .exec()
+      : [];
+    return {
+      items,
+      categories: new Map(
+        categories.map((category) => [category._id.toString(), { id: category._id.toString(), name: category.name }]),
+      ),
+      meta: { page, limit, total },
+    };
+  }
+
+  private async getCategoryStockPage(
+    filter: Record<string, unknown>,
+    page: number,
+    limit: number,
+  ): Promise<StockReadPage> {
+    const skip = (page - 1) * limit;
+    // Only category IDs, names and counts are materialized before pagination.
+    const categories = await this.itemModel.aggregate<StockCategoryCount>([
+      { $match: filter },
+      { $group: { _id: '$categoryId', itemsCount: { $sum: 1 } } },
+      { $lookup: { from: 'categories', localField: '_id', foreignField: '_id', as: 'category' } },
+      { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          itemsCount: 1,
+          name: { $ifNull: ['$category.name', ''] },
+          createdAt: '$category.createdAt',
+          missingCategory: { $cond: [{ $ifNull: ['$category._id', false] }, 0, 1] },
+        },
+      },
+      { $sort: { missingCategory: 1, createdAt: 1, _id: 1 } },
+    ]);
+    const selectedCategories = categories.slice(skip, skip + limit);
+    const selectedIds = selectedCategories.map((category) => category._id);
+    const items = selectedIds.length
+      ? await this.itemModel
+          .find({ ...filter, categoryId: { $in: selectedIds } })
+          .select(STOCK_READ_FIELDS)
+          .sort({ stockQuantity: 1, createdAt: -1, _id: 1 })
+          .lean<StockReadItem[]>()
+          .exec()
+      : [];
+    const categoryOrder = new Map(selectedIds.map((id, index) => [id.toString(), index]));
+    items.sort(
+      (a, b) =>
+        (categoryOrder.get(a.categoryId?.toString() ?? '') ?? 0) -
+        (categoryOrder.get(b.categoryId?.toString() ?? '') ?? 0),
+    );
+    return {
+      items,
+      categories: new Map(
+        selectedCategories
+          .filter((category) => category.name)
+          .map((category) => [category._id.toString(), { id: category._id.toString(), name: category.name }]),
+      ),
       meta: {
         page,
         limit,
-        total,
+        total: categories.length,
+        paginationMode: 'categories' as const,
+        totalItems: categories.reduce((total, category) => total + category.itemsCount, 0),
+        totalPages: Math.max(1, Math.ceil(categories.length / limit)),
       },
-      summary,
+    };
+  }
+
+  private toStockItemResponse(item: StockReadItem, categories: StockReadPage['categories']): StockItemResponseDto {
+    const categoryId = item.categoryId?.toString() ?? '';
+    const stock = item.stockQuantity ?? 0;
+    const threshold = item.reorderThreshold ?? 0;
+    const cost = item.cost ?? 0;
+    const unitPrice = item.unitPrice ?? 0;
+    const positiveStock = Math.max(stock, 0);
+    return {
+      id: item._id.toString(),
+      name: item.name,
+      categoryId,
+      category: categories.get(categoryId) ?? null,
+      isWood: item.isWood ?? false,
+      pricingMode: item.pricingMode,
+      unitPrice,
+      cost,
+      stockQuantity: stock,
+      reorderThreshold: threshold,
+      isActive: item.isActive ?? true,
+      isLowStock: stock > 0 && stock <= threshold,
+      isOutOfStock: stock === 0,
+      isNegativeStock: stock < 0,
+      valuationAtCost: roundMoney(positiveStock * cost),
+      valuationAtSellingPrice: roundMoney(positiveStock * unitPrice),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
     };
   }
 

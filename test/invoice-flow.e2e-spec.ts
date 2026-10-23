@@ -31,7 +31,6 @@ describe('Sales invoice flow (e2e)', () => {
       .post('/api/v1/items')
       .set(auth)
       .send({
-        code: 'PLANK',
         name: 'Plank',
         categoryId: category.body.data.id,
         pricingMode: 'per_piece',

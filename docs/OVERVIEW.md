@@ -125,8 +125,11 @@ is authoritative.
 - Dimensions (`thickness` × `width` × `length`, m) are required on sales and
   purchase lines when the item `pricingMode` is `per_cubic_meter`; piece dimensions
   are optional and descriptive.
-- `free_amount` items are sales-only charges. Each invoice line takes a positive
+- `free_amount` items are amount-only sales or purchase lines. Each invoice line takes a positive
   EGP amount and optional note; it has no stock movement, dimensions, or item cost.
+  Gross profit is net sales minus stocked-item cost of sales and saved free-amount
+  purchase totals in the same Cairo reporting period. Supplier payments do not
+  deduct the amount again; cancelled purchases are excluded.
 
 ### Audit log
 
@@ -189,9 +192,9 @@ See [`.env.example`](../.env.example) for the template.
 
 ### Seed scripts (development)
 
-Available seed commands: `seed:catalog`, `seed:parties`, `seed:invoices`, `seed:purchases`, and `seed:inventory`. These contain mock data; check the target database before running them. Invoice, purchase and inventory seeds require an existing user.
+The former mock-data seed scripts and their package commands have been removed. Create development data through the application/API. No seed or migration runs automatically at startup. Tests use isolated temporary MongoDB replica sets.
 
-There is no `seed:super-admin` script in this checkout. Initial account provisioning must be arranged separately; no public registration exists. Do not assume every seed is non-mutating when repeated.
+No `seed:super-admin` script or public registration endpoint is shipped. Initial account provisioning must be arranged separately.
 
 ### Run
 
@@ -283,7 +286,7 @@ all business logic or ownership decisions correct.
 
 ## Free-amount sales and export contracts
 
-`free_amount` is a third item pricing mode (Arabic: مبلغ حر). It is selected at item creation and cannot be changed later. Sales invoice lines enter one amount, with canonical stored `quantity: 1` and `piecePrice: amount`; the server recomputes totals, snapshots zero cost, and makes no stock adjustment. Purchases and inventory reject these items. Mixed receipts show only the item, optional note, and amount for these lines; physical quantity and cubic totals exclude them.
+`free_amount` is a third item pricing mode (Arabic: مبلغ حر). It is selected at item creation and cannot be changed later. Sales and purchase invoice lines enter one amount, with canonical stored `quantity: 1`, no dimensions, and `piecePrice: amount` for sales or `unitCost: amount` for purchases. Sales snapshot zero cost; neither flow adjusts stock or catalog prices. Inventory excludes these items. Mixed sales receipts show only the item, optional note, and amount for these lines; physical quantity and cubic totals exclude them. Free-amount purchase line totals reduce existing gross-profit figures by purchase creation date, independently of sales invoices and payment dates; no invoice matching or operating-expense records are involved.
 
 Authenticated receipt and numeric/same-customer neighbor endpoints support frontend PNG A5/PDF A4 export; no image or PDF rendering runs in the API. Custom inclusive Cairo `from`/`to` ranges supplement preset periods.
 
@@ -306,3 +309,15 @@ Sales creation defaults to Customer Sale, with a single searchable customer sele
 
 
 Additional account payments now retain source-invoice provenance (`Payment.sourceInvoiceId`, `SupplierPayment.sourcePurchaseInvoiceId`) separately from lifecycle links. Invoice/public responses expose active same-party `accountPaymentAmount`; the UI combines it with invoice `paid` for display only. Earlier payments without provenance are not inferred or backfilled from matching timestamps/amounts. Selected customers use the same muted summary panel as suppliers and a Change customer action to reopen the single search dropdown.
+
+## Inventory category pagination
+
+`GET /inventory/stock?paginationMode=categories&page=1&limit=5` returns all matching stock items for five complete categories, ordered by category `createdAt` ascending with category ID as the tie-breaker; missing category references are last, and no locale parameter is used. Search, category and stock-status filters apply before category selection; no group is split, even if it exceeds the old item-page size. Category-mode metadata includes `paginationMode`, `totalItems`, and `totalPages`, with `total` counting matching categories. Omitting the mode preserves item pagination and its existing metadata. Inventory KPI calculations and free-amount exclusions are unchanged.
+
+Stock listing uses separate item/category paging methods and explicitly projected lean reads. Category paging reuses the names from its grouped summary instead of populating category references again. A shared typed response mapper reads plain fields and timestamps and preserves schema defaults. Index changes require query-plan evidence; this refactor does not add indexes or alter the API.
+
+## Item identification
+
+Items are identified by database ID and displayed by name/category. Create and update item requests do not accept `code`; item, inventory and dashboard top-selling responses do not return it. Item-name duplicates are allowed. Item forms do not fetch the complete catalog to generate identifiers. Items and Inventory search names only; invoice selectors retain item/category-name search. Historical audit code hiding remains for old audit entries. Database cleanup is a manual rollout step; no database fields or indexes are removed automatically.
+
+See [manual item-code cleanup](REMOVE-ITEM-CODES.md) for the application/database transition and exact MongoDB commands.

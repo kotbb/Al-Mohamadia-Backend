@@ -6,6 +6,7 @@ import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { SalesInvoice, SalesInvoiceSchema } from '../sales-invoices/schemas/sales-invoice.schema';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
+import { PurchaseInvoice, PurchaseInvoiceSchema } from '../purchases/schemas/purchase-invoice.schema';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { DashboardService } from './dashboard.service';
       { name: Payment.name, schema: PaymentSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: Item.name, schema: ItemSchema },
+      { name: PurchaseInvoice.name, schema: PurchaseInvoiceSchema },
     ]),
   ],
   controllers: [DashboardController],

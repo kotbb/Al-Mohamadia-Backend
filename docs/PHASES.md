@@ -68,13 +68,13 @@ UI or API routes.
 - [x] `Category`, `Item`, `ItemPriceHistory` schemas/modules
 - [x] CRUD for categories and items (soft delete; category delete blocked when live items exist)
 - [x] Price/cost update endpoint that appends to `ItemPriceHistory` + audit `price_changed`
-- [x] Dev seed script: `npm run seed:catalog`
+- Former development seed removed; create example records through the application/API.
 
 **Frontend** — *Done*
 
 - [x] Items list grouped by category, search/filters
 - [x] Categories list page (create/edit modal, activate/deactivate/delete; delete blocked when items exist)
-- [x] Add/edit item **pages** (pricing mode toggle; auto-generated editable code)
+- [x] Add/edit item **pages** (pricing mode toggle; name and category, no item code)
 - [x] Price history **modal** per item
 - [x] Soft-delete item with confirmation (row actions kebab menu)
 - [x] Users page polish: row actions, create/edit admin modal, activate/deactivate/delete confirms
@@ -102,7 +102,7 @@ Modules: `src/modules/categories`, `items`.
 - [x] Optional starting and editable current `balance` / `amountOwed`, with automatic adjustment audit
 - [x] Soft-delete blocked when outstanding debt ≠ 0
 - [x] Merge-duplicate endpoints for customers **and** suppliers (`دمج أسماء مكررة`)
-- [x] Dev seed script: `npm run seed:parties`
+- Former development seed removed; create example records through the application/API.
 - [x] Soft-delete audit actions: `category_deleted` / `item_deleted` / `customer_deleted` / `supplier_deleted`
 
 **Frontend** — *Done*
@@ -144,7 +144,7 @@ Modules: `src/modules/customers`, `suppliers`.
 - [x] Cancel invoice (transactional reversal of stock + balance; void
   payments via `reversedAt` / `reversedBy`)
 - [x] Customer merge re-points `SalesInvoice` / `Payment` to target
-- [x] Dev seed: `npm run seed:invoices`
+- Former development seed removed; create example records through the application/API.
 - [x] Invoice editing (`PATCH /sales-invoices/:id`): transactional stock revert & reapply, customer balance adjustment, in-place payment update, audit `invoice_updated`
 - [x] Client-side A4 PDF generation + public tokenized JSON receipt (`GET /public/sales-invoices/:token`) + WhatsApp share payload (`GET .../share`)
 - [x] Authenticated self-contained receipt (`GET /sales-invoices/:id/receipt`) and numeric/same-customer neighbors (`GET /sales-invoices/:id/neighbors`); existing public links remain valid
@@ -280,6 +280,7 @@ Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 - [x] `StockAdjustment` schema & module for manual inventory audit (جرد) with reason
 - [x] Transactional stock adjustment updating `Item.stockQuantity` and writing `AuditLog` (`stock_adjusted`, `refCollection: 'StockAdjustment'`)
 - [x] Stock list endpoint (`GET /inventory/stock`) with computed low/out-of/negative stock flags, category/search filters, pagination, and KPI summary count badges
+- [x] Inventory category pagination (`paginationMode=categories`, UI limit 5) keeps every matching category complete, preserves category creation-date ascending order and KPI semantics, and retains legacy item-based API pagination.
 - [x] Inventory valuation endpoint (`GET /inventory/valuation`) with total value at cost, at selling price, potential profit, and category breakdowns
 - [x] Adjustment history reads `stock_adjusted` entries through `GET /audit-logs`; there are no GET inventory-adjustment endpoints
 - [x] Unit test suite covering stock adjustments, listing flags, filters, and valuations
@@ -289,10 +290,10 @@ Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 - [x] Dedicated Inventory Management page (`/inventory`) with segmented view toggle between "Current Stock" (مستويات المخزون) and "Adjustment Log" (سجل التسويات والجرد)
 - [x] Top 4 KPI Cards with professional SVG line icons: Valuation at Cost, Expected Revenue at Selling Price, Potential Profit & Margin %, and Stock Alerts (clickable alert count badges filtering the stock table)
 - [x] "Category Breakdown" modal (`CategoryValuationModal`) displaying cost valuation, selling value, and potential profit per category
-- [x] Current stock table with SKU code badges, wood pricing units (`قطعة` / `م³` with 3 decimal precision), stock vs. threshold levels, dynamic status badges (Normal, Low Stock, Out of Stock, Negative), prices, and line valuations
+- [x] Current stock table with item names, wood pricing units (`قطعة` / `م³` with 3 decimal precision), stock vs. threshold levels, dynamic status badges (Normal, Low Stock, Out of Stock, Negative), prices, and line valuations
 - [x] Stock Adjustment modal (`StockAdjustmentModal`) with wood store common reason presets (`عجز جرد`, `زيادة جرد`, `تالف / كسر`, `تلف رطوبة وتخزين`, `تصحيح خطأ إدخال`), custom notes, live difference badge (+X / -X), and input validation
 - [x] Quick Reorder Threshold modal (`ReorderThresholdModal`) to update minimum stock warning levels on the fly
-- [x] Adjustment Log table with Cairo-aware timestamps, item code/name, difference badges, old vs. new quantity, adjustment reason, and adjuster username
+- [x] Adjustment Log table with Cairo-aware timestamps, item name, difference badges, old vs. new quantity, adjustment reason, and adjuster username
 - [x] Item-specific Adjustment Log history modal (`ItemAdjustmentHistoryModal`) accessible directly from stock row actions
 - [x] Cairo Period & Date picker integration for adjustments log (`day`, `week`, `month`, `year`) plus item filter dropdown
 - [x] Navigation: Hub 3 (Inventory & Catalog) leads with `/inventory` in sidebar and horizontal `HubTabs` (`/inventory`, `/items`, `/categories`)
@@ -347,7 +348,7 @@ Query params: `period` (`day` \| `week` \| `month` \| `year`) with `date`
 month. The selected range applies to `periodFinancials`, `salesSeries` and
 `topSellingItems`; today and live debt KPIs remain independent.
 
-Response: `{ today: { sales, estimatedProfit, invoiceCount, collected }, periodFinancials: { sales, estimatedGrossProfit }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, code, quantity, revenue }] }`. `today.estimatedProfit` retains its gross-profit meaning. Free-amount charges contribute to sales and gross profit but not item quantity rankings. Custom ranges return `period.period = "custom"`.
+Response: `{ today: { sales, estimatedProfit, invoiceCount, collected }, periodFinancials: { sales, estimatedGrossProfit }, debt: { totalDebt, debtorCount }, period: { period, date, from, to }, salesSeries: [{ bucketStart, sales }], topSellingItems: [{ itemId, name, quantity, revenue }] }`. `today.estimatedProfit` retains its gross-profit meaning. Free-amount sales contribute to sales and gross profit but not item quantity rankings. Saved free-amount purchase line totals reduce gross profit in their purchase creation period; payments do not deduct the amount again and cancelled purchases are excluded. Custom ranges return `period.period = "custom"`.
 
 Module: `src/modules/dashboard`.
 
@@ -383,18 +384,19 @@ Module: `src/modules/audit` (backend).
 
 ---
 
-## Free-amount sales and expense retirement
+## Free-amount sales/purchases and expense retirement
 
 - [x] `free_amount` (مبلغ حر) is a third, immutable item pricing mode. Item creation
-  needs a name, code, and category; price, cost, dimensions, stock, and reorder
+  needs a name and category; price, cost, dimensions, stock, and reorder
   threshold are not editable for this mode.
 - [x] Cash and customer invoices accept a positive EGP amount and optional note
   for each free-amount line. The server stores quantity 1 and `piecePrice` equal
   to the amount, recalculates totals, snapshots zero cost, and skips stock changes.
-  Purchase and inventory flows exclude these items.
+  Purchase forms also accept one positive amount as `unitCost`, canonical quantity 1, and no dimensions; neither flow changes stock. Inventory still excludes these items.
 - [x] Mixed receipts leave quantity, dimensions, and unit price blank for these
   lines. Displayed quantity/cubic totals and unit rankings count physical goods
   only; charges remain in sales and gross profit.
+- [x] Existing gross profit is net sales minus stocked-item sales costs and saved free-amount purchase totals, filtered independently by invoice creation dates in the Cairo reporting period. No sale/purchase matching, catalog prices, or extra dashboard cards are introduced.
 - [x] Operating-expense UI/API and expense-dependent dashboard fields are retired.
   Historical audit records remain. No cleanup command is shipped; retired collections are left untouched. Any future cleanup requires a separately reviewed maintenance operation.
 - [x] Custom inclusive Cairo `from`/`to` ranges remain available for invoices,
@@ -499,3 +501,9 @@ Payment-history notes distinguish additional account payments while preserving u
 - Customer listing search (`q`) matches escaped customer names only. Sales creation, customer management, and customer-payment searches use that same contract; phone numbers remain editable contact data.
 - Sales invoice item selection searches item or category names inside one keyboard-accessible dropdown, retaining the chosen item and its line settings until another choice is confirmed. Active items and an existing inactive selection are supported.
 - Sales summary places Paid amount before Discount in locale reading order, including on narrow screens. Existing payment allocation calculations are unchanged.
+
+### Item codes removed
+
+- [x] Item APIs and forms use names and category selection without an item code. References continue using database IDs; duplicate item names remain allowed.
+- [x] Items and Inventory search by item name only; invoice selectors retain item/category-name search. Inventory and dashboard top-selling-item responses no longer include a code.
+- [x] Legacy database fields and their single-field index are removed only by the manual cleanup procedure, never automatically at application startup. Historical audit records remain unchanged.

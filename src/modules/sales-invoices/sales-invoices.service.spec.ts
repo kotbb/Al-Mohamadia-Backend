@@ -51,7 +51,6 @@ describe('SalesInvoicesService', () => {
 
   const makeItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemId },
-    code: 'MDF-18',
     name: 'لوح MDF',
     pricingMode: PricingMode.PER_PIECE,
     unitPrice: 450,
@@ -407,7 +406,6 @@ describe('SalesInvoicesService', () => {
     it('computes cubic line stock and total', async () => {
       const cubicItem = makeItem({
         _id: { toString: () => cubicItemId },
-        code: 'WOOD-BALADI',
         pricingMode: PricingMode.PER_CUBIC_METER,
         unitPrice: 850,
         cost: 720,

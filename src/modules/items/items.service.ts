@@ -1,5 +1,5 @@
 import { categoryRefId, categoryRefName } from './utils/category-reference.util';
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { Item, ItemDocument } from './schemas/item.schema';
@@ -48,19 +48,12 @@ export class ItemsService {
       throw new NotFoundException('Category not found');
     }
 
-    const trimmedCode = dto.code.trim();
-    const existing = await this.itemModel.findOne({ code: trimmedCode, isDeleted: false }).lean().exec();
-    if (existing) {
-      throw new ConflictException('Item code already exists');
-    }
-
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
       const [created] = await this.itemModel.create(
         [
           {
-            code: trimmedCode,
             name: dto.name.trim(),
             categoryId: dto.categoryId,
             isWood: dto.isWood ?? false,
@@ -149,24 +142,6 @@ export class ItemsService {
     }
 
     const changes: Record<string, { old: unknown; new: unknown }> = {};
-
-    if (dto.code !== undefined) {
-      const trimmedCode = dto.code.trim();
-      if (trimmedCode !== item.code) {
-        const existing = await this.itemModel
-          .findOne({
-            code: trimmedCode,
-            isDeleted: false,
-            _id: { $ne: id },
-          })
-          .lean()
-          .exec();
-        if (existing) {
-          throw new ConflictException('Item code already exists');
-        }
-        item.code = trimmedCode;
-      }
-    }
 
     if (dto.name !== undefined) {
       const trimmedName = dto.name.trim();
@@ -326,7 +301,7 @@ export class ItemsService {
     }
 
     if (item.pricingMode === PricingMode.FREE_AMOUNT) {
-      throw new BadRequestException('Free-amount item pricing is entered on each sales invoice');
+      throw new BadRequestException('Free-amount item pricing is entered on each invoice');
     }
 
     const pendingChanges: {
@@ -492,7 +467,6 @@ export class ItemsService {
 
     return {
       id: item._id.toString(),
-      code: item.code,
       name: item.name,
       category: {
         id:

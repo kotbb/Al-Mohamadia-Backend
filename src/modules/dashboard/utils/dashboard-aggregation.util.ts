@@ -1,6 +1,16 @@
 import type { PipelineStage } from 'mongoose';
 import { PricingMode } from '../../../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../../../shared/enums/sales-invoice-status.enum';
+import { PurchaseInvoiceStatus } from '../../../shared/enums/purchase-invoice-status.enum';
+
+export function buildFreeAmountPurchaseExpensePipeline(from: Date, to: Date): PipelineStage[] {
+  return [
+    { $match: { status: PurchaseInvoiceStatus.SAVED, createdAt: { $gte: from, $lt: to } } },
+    { $unwind: '$lines' },
+    { $match: { 'lines.pricingModeSnapshot': PricingMode.FREE_AMOUNT } },
+    { $group: { _id: null, expenseSum: { $sum: '$lines.lineTotal' } } },
+  ];
+}
 
 function mongoLineVolumeM3Expr(): Record<string, unknown> {
   return {

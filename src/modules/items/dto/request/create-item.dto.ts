@@ -20,11 +20,6 @@ export class CreateItemDto {
   @TrimText()
   @IsString()
   @IsNotEmpty()
-  code: string;
-
-  @TrimText()
-  @IsString()
-  @IsNotEmpty()
   name: string;
 
   @IsMongoId()

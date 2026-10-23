@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { ItemsService } from './items.service';
@@ -42,7 +42,6 @@ describe('ItemsService', () => {
 
   const mockItem = {
     _id: { toString: () => validId },
-    code: 'W001',
     name: 'لوح MDF',
     categoryId: {
       _id: { toString: () => categoryId },
@@ -131,7 +130,7 @@ describe('ItemsService', () => {
 
   describe('create', () => {
     it('creates a free-amount item with zero valued physical and pricing fields', async () => {
-      await service.create({ code: 'F001', name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT }, actor);
+      await service.create({ name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT }, actor);
       expect(itemModel.create).toHaveBeenCalledWith(
         [
           expect.objectContaining({
@@ -149,17 +148,13 @@ describe('ItemsService', () => {
 
     it('rejects physical and pricing fields on free-amount items', async () => {
       await expect(
-        service.create(
-          { code: 'F001', name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT, stockQuantity: 2 },
-          actor,
-        ),
+        service.create({ name: 'تصنيع', categoryId, pricingMode: PricingMode.FREE_AMOUNT, stockQuantity: 2 }, actor),
       ).rejects.toThrow(BadRequestException);
       expect(itemModel.create).not.toHaveBeenCalled();
     });
     it('creates an item and writes audit log', async () => {
       const result = await service.create(
         {
-          code: 'W001',
           name: 'لوح MDF',
           categoryId,
           pricingMode: PricingMode.PER_PIECE,
@@ -167,7 +162,7 @@ describe('ItemsService', () => {
         actor,
       );
 
-      expect(result.code).toBe('W001');
+      expect(result).not.toHaveProperty('code');
       expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'item_created' }), session);
     });
 
@@ -177,7 +172,6 @@ describe('ItemsService', () => {
       await expect(
         service.create(
           {
-            code: 'W001',
             name: 'لوح MDF',
             categoryId,
             pricingMode: PricingMode.PER_PIECE,
@@ -187,22 +181,10 @@ describe('ItemsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('throws ConflictException when code exists', async () => {
-      itemModel.findOne.mockReturnValue({
-        lean: () => ({ exec: () => Promise.resolve({ code: 'W001' }) }),
-      });
-
-      await expect(
-        service.create(
-          {
-            code: 'W001',
-            name: 'لوح MDF',
-            categoryId,
-            pricingMode: PricingMode.PER_PIECE,
-          },
-          actor,
-        ),
-      ).rejects.toThrow(ConflictException);
+    it('does not query for duplicate codes or names during creation', async () => {
+      await service.create({ name: 'Repeated name', categoryId, pricingMode: PricingMode.PER_PIECE }, actor);
+      expect(itemModel.findOne).not.toHaveBeenCalled();
+      expect(itemModel.create).toHaveBeenCalled();
     });
   });
 

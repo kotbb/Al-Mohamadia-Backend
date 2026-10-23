@@ -21,9 +21,6 @@ const ItemDimensionDefaultsSchema = SchemaFactory.createForClass(ItemDimensionDe
 @Schema({ timestamps: true })
 export class Item {
   @Prop({ required: true, trim: true })
-  code: string;
-
-  @Prop({ required: true, trim: true })
   name: string;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Category', required: true })
@@ -59,5 +56,4 @@ export class Item {
 
 export const ItemSchema = SchemaFactory.createForClass(Item);
 
-ItemSchema.index({ code: 1 }, { unique: true, partialFilterExpression: { isDeleted: false } });
 ItemSchema.index({ categoryId: 1, isDeleted: 1 });

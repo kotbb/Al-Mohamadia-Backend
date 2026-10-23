@@ -16,6 +16,9 @@ export type SalesCogsAgg = Pick<TodaySalesAgg, 'cogsSum'>;
 export interface CollectedAgg {
   totalAmount: number;
 }
+export interface PurchaseExpenseAgg {
+  expenseSum: number;
+}
 export interface DebtAgg {
   totalDebt: number;
   debtorCount: number;

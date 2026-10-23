@@ -8,7 +8,6 @@ export class ItemCategorySummaryDto {
 
 export class ItemResponseDto {
   id: string;
-  code: string;
   name: string;
   category: ItemCategorySummaryDto;
   isWood: boolean;

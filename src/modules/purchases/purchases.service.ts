@@ -68,9 +68,6 @@ export class PurchasesService {
       if (!item.isActive) {
         throw new BadRequestException(`Item is inactive: ${item.name}`);
       }
-      if (item.pricingMode === PricingMode.FREE_AMOUNT) {
-        throw new BadRequestException(`Free-amount items cannot be purchased: ${item.name}`);
-      }
     }
 
     const builtLines = dto.lines.map((lineDto) => this.buildLine(lineDto, itemById.get(lineDto.itemId)!));
@@ -139,6 +136,7 @@ export class PurchasesService {
 
       // Stock increment: Buying goods increases stock
       for (const row of builtLines) {
+        if (row.stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: row.stockDelta } }, { session });
       }
 
@@ -301,9 +299,6 @@ export class PurchasesService {
     const originalItemIds = new Set(current.lines.map((line) => line.itemId.toString()));
     const itemById = new Map(items.map((item) => [item._id.toString(), item]));
     for (const item of items) {
-      if (item.pricingMode === PricingMode.FREE_AMOUNT) {
-        throw new BadRequestException(`Free-amount items cannot be purchased: ${item.name}`);
-      }
       if (!item.isActive && !originalItemIds.has(item._id.toString())) {
         throw new BadRequestException(`Item is inactive: ${item.name}`);
       }
@@ -364,9 +359,11 @@ export class PurchasesService {
           widthM: line.width,
           lengthM: line.length,
         });
+        if (delta === 0) continue;
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: -delta } }, { session });
       }
       for (const row of builtLines) {
+        if (row.stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: row.itemId }, { $inc: { stockQuantity: row.stockDelta } }, { session });
       }
 
@@ -541,6 +538,7 @@ export class PurchasesService {
           lengthM: line.length,
         });
 
+        if (stockDelta === 0) continue;
         await this.itemModel.updateOne({ _id: line.itemId }, { $inc: { stockQuantity: -stockDelta } }, { session });
       }
 
@@ -606,13 +604,27 @@ export class PurchasesService {
   // ----------------- Helper Methods -----------------
 
   private buildLine(lineDto: CreatePurchaseInvoiceLineDto, item: ItemDocument): BuiltPurchaseLine {
-    if (lineDto.unitCost <= 0) {
-      throw new BadRequestException('unitCost must be greater than 0');
+    if (
+      !Number.isFinite(lineDto.unitCost) ||
+      lineDto.unitCost <= 0 ||
+      lineDto.unitCost !== roundMoney(lineDto.unitCost)
+    ) {
+      throw new BadRequestException('unitCost must be positive with at most 2 decimal places');
     }
     if (lineDto.quantity <= 0) {
       throw new BadRequestException('quantity must be greater than 0');
     }
 
+    const isFreeAmount = item.pricingMode === PricingMode.FREE_AMOUNT;
+    if (
+      isFreeAmount &&
+      (lineDto.quantity !== 1 ||
+        lineDto.thickness !== undefined ||
+        lineDto.width !== undefined ||
+        lineDto.length !== undefined)
+    ) {
+      throw new BadRequestException('Free-amount lines require quantity 1 and no dimensions');
+    }
     const isCubic = item.pricingMode === PricingMode.PER_CUBIC_METER;
     if (isCubic) {
       if (lineDto.thickness === undefined || lineDto.width === undefined || lineDto.length === undefined) {
@@ -652,7 +664,7 @@ export class PurchasesService {
       lengthM: length,
     });
 
-    validateLineValues({ isCubic, thickness, width, length, stockDelta, lineTotal });
+    validateLineValues({ isCubic, isFreeAmount, thickness, width, length, stockDelta, lineTotal });
 
     const note = lineDto.note !== undefined && lineDto.note.trim() !== '' ? lineDto.note.trim() : null;
 
