@@ -36,8 +36,12 @@ export class SalesInvoiceListSummaryDto {
   totalAmount: number;
 }
 
+export class SalesInvoiceListItemResponseDto extends SalesInvoiceResponseDto {
+  customerName: string | null;
+}
+
 export class SalesInvoiceListResponseDto {
-  items: SalesInvoiceResponseDto[];
+  items: SalesInvoiceListItemResponseDto[];
   meta: {
     page: number;
     limit: number;

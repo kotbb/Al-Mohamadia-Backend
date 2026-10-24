@@ -507,3 +507,8 @@ Payment-history notes distinguish additional account payments while preserving u
 - [x] Item APIs and forms use names and category selection without an item code. References continue using database IDs; duplicate item names remain allowed.
 - [x] Items and Inventory search by item name only; invoice selectors retain item/category-name search. Inventory and dashboard top-selling-item responses no longer include a code.
 - [x] Legacy database fields and their single-field index are removed only by the manual cleanup procedure, never automatically at application startup. Historical audit records remain unchanged.
+
+### Invoice-list customer names
+
+- [x] Sales invoice list items include current nullable customer names through one projected, lean, page-bounded batch lookup. Cash-only and empty pages skip it; missing/soft-deleted customers use null, and inactive names remain visible.
+- [x] Frontend list rows load in one request without customer-detail calls or a name cache. Pagination, filters, totals and refresh/error/abort behavior remain intact. No migration, schema change, or new index is required.

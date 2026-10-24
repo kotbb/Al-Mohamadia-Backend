@@ -246,10 +246,19 @@ export class SalesInvoicesService {
     ]);
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
-    const accountPayments = await this.accountPaymentAmounts(docs);
+    const [accountPayments, customerNames] = await Promise.all([
+      this.accountPaymentAmounts(docs),
+      this.customerNamesForInvoices(docs),
+    ]);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0)),
+      items: docs.map((doc) => ({
+        ...this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0),
+        customerName:
+          doc.type === SalesInvoiceType.CUSTOMER_SALE && doc.customerId
+            ? (customerNames.get(doc.customerId.toString()) ?? null)
+            : null,
+      })),
       meta: { page, limit, total },
       summary: { totalAmount },
     };
@@ -958,6 +967,25 @@ export class SalesInvoicesService {
   ): Promise<SalesInvoiceResponseDto> {
     const amounts = await this.accountPaymentAmounts([invoice], session);
     return this.toResponseDto(invoice, amounts.get(invoice._id.toString()) ?? 0);
+  }
+
+  private async customerNamesForInvoices(invoices: SalesInvoiceDocument[]): Promise<Map<string, string>> {
+    const customerIds = [
+      ...new Set(
+        invoices
+          .filter((invoice) => invoice.type === SalesInvoiceType.CUSTOMER_SALE && invoice.customerId)
+          .map((invoice) => invoice.customerId!.toString()),
+      ),
+    ];
+    if (customerIds.length === 0) return new Map();
+
+    const customers = await this.customerModel
+      .find({ _id: { $in: customerIds.map((id) => new Types.ObjectId(id)) }, isDeleted: false })
+      .select('_id name')
+      .lean()
+      .exec();
+
+    return new Map(customers.map((customer) => [customer._id.toString(), customer.name]));
   }
 
   private toResponseDto(invoice: SalesInvoiceDocument, accountPaymentAmount = 0): SalesInvoiceResponseDto {

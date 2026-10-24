@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 import { SalesInvoicesService } from './sales-invoices.service';
 import { SalesInvoice } from './schemas/sales-invoice.schema';
 import { Payment } from '../payments/schemas/payment.schema';
@@ -23,6 +24,7 @@ describe('SalesInvoicesService', () => {
     findById: jest.Mock;
     findOne: jest.Mock;
     countDocuments: jest.Mock;
+    aggregate: jest.Mock;
   };
   let paymentModel: { aggregate: jest.Mock; create: jest.Mock; updateMany: jest.Mock; findOne: jest.Mock };
   let invoiceCounterModel: { findOneAndUpdate: jest.Mock };
@@ -168,6 +170,7 @@ describe('SalesInvoicesService', () => {
         exec: () => Promise.resolve(makeInvoice({ pdfShareToken: 'abc' })),
       }),
       countDocuments: jest.fn().mockReturnValue({ exec: () => Promise.resolve(1) }),
+      aggregate: jest.fn().mockResolvedValue([{ totalAmount: 900 }]),
     };
 
     paymentModel = {
@@ -246,6 +249,72 @@ describe('SalesInvoicesService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('findAll customer names', () => {
+    const inactiveId = '507f1f77bcf86cd799439013';
+    const missingId = '507f1f77bcf86cd799439014';
+    const deletedId = '507f1f77bcf86cd799439015';
+
+    const setPage = (docs: ReturnType<typeof makeInvoice>[]) => {
+      salesInvoiceModel.find.mockReturnValue({
+        sort: () => ({ skip: () => ({ limit: () => ({ exec: () => Promise.resolve(docs) }) }) }),
+      });
+      salesInvoiceModel.countDocuments.mockReturnValue({ exec: () => Promise.resolve(docs.length) });
+    };
+
+    it('batches unique page customer IDs with a lean name-only projection and preserves totals', async () => {
+      setPage([
+        makeInvoice(),
+        makeInvoice(),
+        makeInvoice({ customerId: new Types.ObjectId(inactiveId) }),
+        makeInvoice({ customerId: new Types.ObjectId(missingId) }),
+        makeInvoice({ customerId: new Types.ObjectId(deletedId) }),
+        makeInvoice({ type: SalesInvoiceType.CASH_SALE, customerId: null }),
+      ]);
+      const exec = jest.fn().mockResolvedValue([
+        { _id: new Types.ObjectId(customerId), name: 'Current customer' },
+        { _id: new Types.ObjectId(inactiveId), name: 'Inactive customer' },
+      ]);
+      const lean = jest.fn().mockReturnValue({ exec });
+      const select = jest.fn().mockReturnValue({ lean });
+      customerModel.find.mockReturnValue({ select });
+      const result = await service.findAll({ page: 2, limit: 6 });
+      expect(result.items.map((invoice) => invoice.customerName)).toEqual([
+        'Current customer',
+        'Current customer',
+        'Inactive customer',
+        null,
+        null,
+        null,
+      ]);
+      expect(customerModel.find).toHaveBeenCalledTimes(1);
+      expect(customerModel.find).toHaveBeenCalledWith({
+        _id: { $in: [customerId, inactiveId, missingId, deletedId].map((id) => new Types.ObjectId(id)) },
+        isDeleted: false,
+      });
+      expect(select).toHaveBeenCalledWith('_id name');
+      expect(lean).toHaveBeenCalledTimes(1);
+      expect(customerModel.findById).not.toHaveBeenCalled();
+      expect(customerModel.findOne).not.toHaveBeenCalled();
+      expect(result.meta).toEqual({ page: 2, limit: 6, total: 6 });
+      expect(result.summary).toEqual({ totalAmount: 900 });
+      expect(result.items[0]).toMatchObject({ total: 900, paid: 400, remaining: 500, accountPaymentAmount: 0 });
+    });
+
+    it.each(['empty', 'cash'])('skips the name query for %s pages', async (kind) => {
+      setPage(kind === 'empty' ? [] : [makeInvoice({ type: SalesInvoiceType.CASH_SALE, customerId: null })]);
+      const result = await service.findAll({});
+      expect(customerModel.find).not.toHaveBeenCalled();
+      for (const invoice of result.items) expect(invoice.customerName).toBeNull();
+    });
+
+    it('propagates name lookup failures through the normal list error path', async () => {
+      customerModel.find.mockReturnValue({
+        select: () => ({ lean: () => ({ exec: () => Promise.reject(new Error('Name lookup failed')) }) }),
+      });
+      await expect(service.findAll({})).rejects.toThrow('Name lookup failed');
+    });
   });
 
   describe('create', () => {
