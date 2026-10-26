@@ -279,7 +279,7 @@ Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 
 - [x] `StockAdjustment` schema & module for manual inventory audit (جرد) with reason
 - [x] Transactional stock adjustment updating `Item.stockQuantity` and writing `AuditLog` (`stock_adjusted`, `refCollection: 'StockAdjustment'`)
-- [x] Stock list endpoint (`GET /inventory/stock`) with computed low/out-of/negative stock flags, category/search filters, pagination, and KPI summary count badges
+- [x] Stock list endpoint (`GET /inventory/stock`) with computed low/out-of-stock flags, category/search filters, pagination, and KPI summary count badges. Out of stock includes all quantities <= 0; signed quantities remain unchanged.
 - [x] Inventory category pagination (`paginationMode=categories`, UI limit 5) keeps every matching category complete, preserves category creation-date ascending order and KPI semantics, and retains legacy item-based API pagination.
 - [x] Inventory valuation endpoint (`GET /inventory/valuation`) with total value at cost, at selling price, potential profit, and category breakdowns
 - [x] Adjustment history reads `stock_adjusted` entries through `GET /audit-logs`; there are no GET inventory-adjustment endpoints
@@ -290,7 +290,7 @@ Modules: `src/modules/purchases`, `src/modules/supplier-payments`.
 - [x] Dedicated Inventory Management page (`/inventory`) with segmented view toggle between "Current Stock" (مستويات المخزون) and "Adjustment Log" (سجل التسويات والجرد)
 - [x] Top 4 KPI Cards with professional SVG line icons: Valuation at Cost, Expected Revenue at Selling Price, Potential Profit & Margin %, and Stock Alerts (clickable alert count badges filtering the stock table)
 - [x] "Category Breakdown" modal (`CategoryValuationModal`) displaying cost valuation, selling value, and potential profit per category
-- [x] Current stock table with item names, wood pricing units (`قطعة` / `م³` with 3 decimal precision), stock vs. threshold levels, dynamic status badges (Normal, Low Stock, Out of Stock, Negative), prices, and line valuations
+- [x] Current stock table with item names, wood pricing units (`قطعة` / `م³` with 3 decimal precision), stock vs. threshold levels, dynamic status badges (Normal, Low Stock, Out of Stock), prices, and line valuations
 - [x] Stock Adjustment modal (`StockAdjustmentModal`) with wood store common reason presets (`عجز جرد`, `زيادة جرد`, `تالف / كسر`, `تلف رطوبة وتخزين`, `تصحيح خطأ إدخال`), custom notes, live difference badge (+X / -X), and input validation
 - [x] Quick Reorder Threshold modal (`ReorderThresholdModal`) to update minimum stock warning levels on the fly
 - [x] Adjustment Log table with Cairo-aware timestamps, item name, difference badges, old vs. new quantity, adjustment reason, and adjuster username
@@ -402,6 +402,32 @@ Module: `src/modules/audit` (backend).
 - [x] Custom inclusive Cairo `from`/`to` ranges remain available for invoices,
   customer payments, purchases, supplier payments, and dashboard.
 
+## Shared personal ledger — دفترك
+
+**Backend**
+- [x] Shared `personal-ledger` module protected by the existing superadmin role guard, without owner filters.
+- [x] Separate contacts and deposit/withdrawal movements; no personal history, operational AuditLog events or store accounting effects.
+- [x] Positive finite two-decimal EGP amounts, real past/today Cairo dates, optional method/notes, edits and terminal soft deletion. No opening-balance workflow.
+- [x] Paginated lists with full-filter summaries, signed net and contact lifetime totals; saved customer names survive store edits/merges/deletion.
+- [x] Existing transactional mutations and ordinary active-contact checks without contact counters or special simultaneous-link recovery.
+
+**Frontend**
+- [x] Superadmin-only `/personal-ledger` destination before Audit, using the existing shell, bilingual labels, RTL/LTR and light/dark tokens.
+- [x] Three summary cards, search, standard No period/Day/Week/Month/Year/Custom controls and paginated table; default No period (no date bounds).
+- [x] Movement add/edit/detail/delete dialogs, searchable saved customers/ledger people, add/rename contact management and lifetime contact totals.
+- [x] Optional payment methods display blank; personal history and Archive controls are removed.
+- [x] One form-owned saving workflow prevents repeat submits and saving while a new person is being created.
+
+**Done when:** all superadmins can manage the same records, admins are denied,
+filtered and lifetime totals agree with active movements, and store accounting
+and operational audit remain unchanged. Existing history documents are left untouched, with no history endpoint or new event writes. Automated regressions cover these rules;
+visual/interaction verification remains manual (see the frontend overview).
+
+Modules: backend `src/modules/personal-ledger`, frontend `app/modules/personal-ledger`.
+API contracts: [backend README](../../Al-Mohamadia-Backend/README.md#personal-ledger).
+
+---
+
 ## Phase 10 — Polish & Hardening
 
 - Full i18n pass (no missed/hardcoded strings in either language)
@@ -432,6 +458,7 @@ Module: `src/modules/audit` (backend).
 | 7 — Inventory Management | Done | Done |
 | 8 — Dashboard | Done | Done |
 | 9 — Audit Log UI | Done | Done |
+| Shared personal ledger | Done | Implemented; manual visual checks pending |
 | 10 — Polish & Hardening | Implemented; runtime validation pending | Implemented; manual visual checks pending |
 
 ### Compact inventory and invoice dimension additions

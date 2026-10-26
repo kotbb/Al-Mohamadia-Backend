@@ -4,6 +4,7 @@ import type { DimensionDefaults } from '../../types/dimension-defaults.types';
 export class ItemCategorySummaryDto {
   id: string;
   name: string;
+  createdAt?: Date;
 }
 
 export class ItemResponseDto {

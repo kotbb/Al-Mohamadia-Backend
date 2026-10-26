@@ -93,7 +93,7 @@ export class ItemsService {
       );
 
       await session.commitTransaction();
-      await created.populate('categoryId', 'name');
+      await created.populate('categoryId', 'name createdAt');
       return this.toResponseDto(created);
     } catch (error) {
       await session.abortTransaction();
@@ -120,14 +120,17 @@ export class ItemsService {
       filter.isActive = isActive;
     }
 
-    const items = await this.itemModel.find(filter).populate('categoryId', 'name').sort({ name: 1 }).exec();
+    const items = await this.itemModel.find(filter).populate('categoryId', 'name createdAt').sort({ name: 1 }).exec();
 
     return items.map((item) => this.toResponseDto(item));
   }
 
   // Find One Item
   public async findOne(id: string): Promise<ItemResponseDto> {
-    const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).populate('categoryId', 'name').exec();
+    const item = await this.itemModel
+      .findOne({ _id: id, isDeleted: false })
+      .populate('categoryId', 'name createdAt')
+      .exec();
     if (!item) {
       throw new NotFoundException('Item not found');
     }
@@ -136,7 +139,10 @@ export class ItemsService {
 
   // Update Item
   public async update(id: string, dto: UpdateItemDto, user: AuthUser): Promise<ItemResponseDto> {
-    const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).populate('categoryId', 'name').exec();
+    const item = await this.itemModel
+      .findOne({ _id: id, isDeleted: false })
+      .populate('categoryId', 'name createdAt')
+      .exec();
     if (!item) {
       throw new NotFoundException('Item not found');
     }
@@ -229,7 +235,7 @@ export class ItemsService {
       );
 
       await session.commitTransaction();
-      await item.populate('categoryId', 'name');
+      await item.populate('categoryId', 'name createdAt');
       return this.toResponseDto(item);
     } catch (error) {
       await session.abortTransaction();
@@ -241,7 +247,10 @@ export class ItemsService {
 
   // Soft Delete Item
   public async softDelete(id: string, user: AuthUser): Promise<ItemResponseDto> {
-    const item = await this.itemModel.findOne({ _id: id, isDeleted: false }).populate('categoryId', 'name').exec();
+    const item = await this.itemModel
+      .findOne({ _id: id, isDeleted: false })
+      .populate('categoryId', 'name createdAt')
+      .exec();
     if (!item) {
       throw new NotFoundException('Item not found');
     }
@@ -374,7 +383,7 @@ export class ItemsService {
 
       await item.save({ session });
       await session.commitTransaction();
-      await item.populate('categoryId', 'name');
+      await item.populate('categoryId', 'name createdAt');
       return this.toResponseDto(item);
     } catch (error) {
       await session.abortTransaction();
@@ -463,6 +472,7 @@ export class ItemsService {
     const category = item.categoryId as unknown as {
       _id: { toString: () => string };
       name: string;
+      createdAt?: Date;
     };
 
     return {
@@ -474,6 +484,7 @@ export class ItemsService {
             ? category._id.toString()
             : item.categoryId.toString(),
         name: typeof category === 'object' && category !== null && 'name' in category ? category.name : '',
+        createdAt: category?.createdAt,
       },
       isWood: item.isWood,
       pricingMode: item.pricingMode,

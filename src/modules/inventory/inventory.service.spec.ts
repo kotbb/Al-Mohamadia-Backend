@@ -239,13 +239,13 @@ describe('InventoryService', () => {
         paginationMode: 'categories',
         categoryId,
         q: 'A.*',
-        stockStatus: StockStatusFilter.NEGATIVE_STOCK,
+        stockStatus: StockStatusFilter.OUT_OF_STOCK,
       });
       const groupPipeline = itemModel.aggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
       const kpiPipeline = itemModel.aggregate.mock.calls[1][0] as Array<{ $match?: Record<string, unknown> }>;
       expect(groupPipeline[0].$match).toMatchObject({
         categoryId: new Types.ObjectId(categoryId),
-        stockQuantity: { $lt: 0 },
+        stockQuantity: { $lte: 0 },
         pricingMode: { $ne: PricingMode.FREE_AMOUNT },
         name: { $regex: 'A\\.\\*', $options: 'i' },
       });
@@ -325,8 +325,7 @@ describe('InventoryService', () => {
         {
           totalItems: 4,
           lowStockCount: 1,
-          outOfStockCount: 1,
-          negativeStockCount: 1,
+          outOfStockCount: 2,
           normalStockCount: 1,
         },
       ]);
@@ -346,15 +345,18 @@ describe('InventoryService', () => {
       expect(result.items.length).toBe(4);
       expect(result.summary.totalItems).toBe(4);
       expect(result.summary.lowStockCount).toBe(1);
-      expect(result.summary.outOfStockCount).toBe(1);
-      expect(result.summary.negativeStockCount).toBe(1);
+      expect(result.summary.outOfStockCount).toBe(2);
+      expect(result.summary).not.toHaveProperty('negativeStockCount');
       expect(result.summary.normalStockCount).toBe(1);
 
       // Verify computed flags
       expect(result.items[0].isLowStock).toBe(false);
       expect(result.items[1].isLowStock).toBe(true);
       expect(result.items[2].isOutOfStock).toBe(true);
-      expect(result.items[3].isNegativeStock).toBe(true);
+      expect(result.items[3].isOutOfStock).toBe(true);
+      expect(result.items[3].stockQuantity).toBe(-2);
+      expect(result.items[3].valuationAtCost).toBe(0);
+      expect(result.items[3]).not.toHaveProperty('isNegativeStock');
     });
   });
 

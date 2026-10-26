@@ -69,7 +69,7 @@ export class CategoriesService {
 
   // Find All Categories
   public async findAll(): Promise<CategoryResponseDto[]> {
-    const categories = await this.categoryModel.find({ isDeleted: false }).sort({ name: 1 }).exec();
+    const categories = await this.categoryModel.find({ isDeleted: false }).sort({ createdAt: 1, _id: 1 }).exec();
     return categories.map((category) => this.toResponseDto(category));
   }
 

@@ -19,7 +19,6 @@ export class StockItemResponseDto {
   isActive: boolean;
   isLowStock: boolean;
   isOutOfStock: boolean;
-  isNegativeStock: boolean;
   valuationAtCost: number;
   valuationAtSellingPrice: number;
   createdAt?: Date;
@@ -30,7 +29,6 @@ export class StockListSummaryDto {
   totalItems: number;
   lowStockCount: number;
   outOfStockCount: number;
-  negativeStockCount: number;
   normalStockCount: number;
 }
 

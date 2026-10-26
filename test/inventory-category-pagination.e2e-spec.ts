@@ -111,8 +111,7 @@ describe('Inventory category pagination (temporary replica e2e)', () => {
       totalItems: 36,
       normalStockCount: 28,
       lowStockCount: 6,
-      outOfStockCount: 1,
-      negativeStockCount: 1,
+      outOfStockCount: 2,
     });
     const categoryModel = app.get<Model<CategoryDocument>>(getModelToken('Category'));
     await categoryModel.updateOne({ _id: ordered[0].id }, { $set: { name: 'ZZZ renamed' } });
@@ -122,22 +121,39 @@ describe('Inventory category pagination (temporary replica e2e)', () => {
     );
   });
 
+  it('lists categories oldest first and supplies category dates in item responses', async () => {
+    const response = await request(app.getHttpServer()).get('/api/v1/categories').set(auth).expect(200);
+    const ordered = [...categories].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id),
+    );
+    expect((response.body.data as Array<{ id: string }>).map((category) => category.id)).toEqual(
+      ordered.map((category) => category.id),
+    );
+    const items = await request(app.getHttpServer()).get('/api/v1/items').set(auth).expect(200);
+    for (const item of items.body.data as Array<{ category: { id: string; createdAt: string } }>) {
+      expect(item.category.createdAt).toBe(
+        categories.find((category) => category.id === item.category.id)?.createdAt.toISOString(),
+      );
+    }
+  });
+
   it('applies search, category and stock status before category pagination while preserving base KPIs', async () => {
     const filtered = await stock({
       paginationMode: 'categories',
       categoryId: largeCategoryId,
       q: 'match 0-',
-      stockStatus: 'negative_stock',
+      stockStatus: 'out_of_stock',
     });
-    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items).toHaveLength(2);
     expect(filtered.items[0].stockQuantity).toBe(-1);
-    expect(filtered.meta).toMatchObject({ total: 1, totalItems: 1, totalPages: 1 });
+    expect(filtered.items.every((item) => item.isOutOfStock)).toBe(true);
+    expect(filtered.items[0]).not.toHaveProperty('isNegativeStock');
+    expect(filtered.meta).toMatchObject({ total: 1, totalItems: 2, totalPages: 1 });
     expect(filtered.summary).toEqual({
       totalItems: 30,
       normalStockCount: 28,
       lowStockCount: 0,
-      outOfStockCount: 1,
-      negativeStockCount: 1,
+      outOfStockCount: 2,
     });
     expect((await stock({ paginationMode: 'categories', q: 'match 1-' })).meta.totalItems).toBe(1);
     expect((await stock({ paginationMode: 'categories', q: 'absent' })).meta).toMatchObject({
@@ -175,12 +191,15 @@ describe('Inventory category pagination (temporary replica e2e)', () => {
     });
   });
 
-  it.each([{ paginationMode: 'invalid' }, { locale: 'ar' }, { limit: 0 }, { page: 0 }])(
-    'rejects invalid query %j',
-    async (query) => {
-      await request(app.getHttpServer()).get('/api/v1/inventory/stock').set(auth).query(query).expect(400);
-    },
-  );
+  it.each([
+    { paginationMode: 'invalid' },
+    { stockStatus: 'negative_stock' },
+    { locale: 'ar' },
+    { limit: 0 },
+    { page: 0 },
+  ])('rejects invalid query %j', async (query) => {
+    await request(app.getHttpServer()).get('/api/v1/inventory/stock').set(auth).query(query).expect(400);
+  });
 
   it('returns orphan category references safely', async () => {
     const itemModel = app.get<Model<ItemDocument>>(getModelToken('Item'));

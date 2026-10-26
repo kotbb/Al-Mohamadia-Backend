@@ -117,9 +117,7 @@ export class InventoryService {
     const filter = { ...baseFilter };
 
     if (status === StockStatusFilter.OUT_OF_STOCK) {
-      filter.stockQuantity = 0;
-    } else if (status === StockStatusFilter.NEGATIVE_STOCK) {
-      filter.stockQuantity = { $lt: 0 };
+      filter.stockQuantity = { $lte: 0 };
     } else if (status === StockStatusFilter.LOW_STOCK) {
       filter.$expr = {
         $and: [{ $gt: ['$stockQuantity', 0] }, { $lte: ['$stockQuantity', '$reorderThreshold'] }],
@@ -142,7 +140,6 @@ export class InventoryService {
         totalItems: number;
         lowStockCount: number;
         outOfStockCount: number;
-        negativeStockCount: number;
         normalStockCount: number;
       }>([
         { $match: baseFilter },
@@ -151,10 +148,7 @@ export class InventoryService {
             _id: null,
             totalItems: { $sum: 1 },
             outOfStockCount: {
-              $sum: { $cond: [{ $eq: ['$stockQuantity', 0] }, 1, 0] },
-            },
-            negativeStockCount: {
-              $sum: { $cond: [{ $lt: ['$stockQuantity', 0] }, 1, 0] },
+              $sum: { $cond: [{ $lte: ['$stockQuantity', 0] }, 1, 0] },
             },
             lowStockCount: {
               $sum: {
@@ -183,14 +177,12 @@ export class InventoryService {
             totalItems: kpiAgg[0].totalItems,
             lowStockCount: kpiAgg[0].lowStockCount,
             outOfStockCount: kpiAgg[0].outOfStockCount,
-            negativeStockCount: kpiAgg[0].negativeStockCount,
             normalStockCount: kpiAgg[0].normalStockCount,
           }
         : {
             totalItems: 0,
             lowStockCount: 0,
             outOfStockCount: 0,
-            negativeStockCount: 0,
             normalStockCount: 0,
           };
 
@@ -309,8 +301,7 @@ export class InventoryService {
       reorderThreshold: threshold,
       isActive: item.isActive ?? true,
       isLowStock: stock > 0 && stock <= threshold,
-      isOutOfStock: stock === 0,
-      isNegativeStock: stock < 0,
+      isOutOfStock: stock <= 0,
       valuationAtCost: roundMoney(positiveStock * cost),
       valuationAtSellingPrice: roundMoney(positiveStock * unitPrice),
       createdAt: item.createdAt,

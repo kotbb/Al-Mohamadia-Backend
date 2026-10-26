@@ -57,6 +57,25 @@ non-transport contracts remain in the feature's `types/` directory.
 | **Inventory**       | Live stock, low-stock flags, manual جرد adjustments, inventory valuation at cost & selling *(Phase 7 — live)* |
 | **Dashboard**       | Today's sales / gross profit / collected / invoice count, debt totals, selected-period sales and gross profit, period chart + top items *(Phase 8 — live)* |
 | **Audit**           | Append-only activity feed for sensitive mutations                            |
+| **Personal ledger** | Shared superadmin-only deposits/withdrawals, saved people; no personal history; no store accounting effect |
+
+---
+
+### Personal ledger — دفترك
+
+- Shared superadmin-only contacts, deposits and withdrawals under `/api/v1/personal-ledger`, using the existing JWT/role guard.
+- Positive two-decimal EGP amounts and past/today Cairo dates; optional method
+  and notes. Missing method persists as null and displays blank. No opening balance.
+- Store customers are linked by saved name; ledger-only people remain outside
+  Customers. Manage contacts supports adding and renaming people; Archive is removed.
+- Edits and terminal soft deletion keep actor attribution without personal history
+  or operational audit writes. Previously stored history remains untouched.
+- Filtered totals cover all matching movements; person detail adds lifetime
+  totals. Personal activity never affects store balances, stock or dashboard
+  figures and never enters the operational audit feed.
+
+See [DATABASE.md](./DATABASE.md#personalledgercontact) for schemas and
+[the API map](../README.md#personal-ledger) for routes and filters.
 
 ---
 
@@ -80,8 +99,8 @@ No public website webhooks, mobile apps, or multi-tenant headers in MVP.
 - Soft delete (`isDeleted` / `isActive`) on `Category`, `Customer`,
   `Supplier`, `User`, `Item`. `ItemPriceHistory` and `AuditLog` are
   append-only. `RefreshToken` is hard-deleted on logout / expiry / rotation
-- Roles: `super_admin` only for user-management endpoints; `admin` (and
-  `super_admin`) for everything else
+- Roles: `super_admin` only for user management and the shared personal ledger;
+  `admin` (and `super_admin`) for other operational endpoints
 
 JSON success responses use `{ success: true, data }`. Errors use `{ success: false, statusCode, message, path, timestamp, errorCode? }`; validation messages may be an array.
 

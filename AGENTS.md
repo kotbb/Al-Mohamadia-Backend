@@ -104,6 +104,7 @@ Domains (ownership):
 | Payments | `payments` | On-invoice + standalone debt payments |
 | Purchases | `purchases` | Restock; stock + supplier owed |
 | Inventory | `inventory` | Stock list, manual جرد recorded on `AuditLog`, valuation |
+| Personal ledger | `personal-ledger` | Shared superadmin contacts and movements; no history or store accounting effects |
 | Dashboard | `dashboard` | Aggregations only |
 | Audit | `audit` | Append-only writer + read API (Phase 9 UI) |
 
@@ -142,6 +143,10 @@ Domains (ownership):
 | Merge | `customer_merged` / `supplier_merged` with `targetId`, `sourceIds[]`, and money fields in `changes` |
 | Other mutations | Set `changes` per-field `{ old, new }`; leave refs null |
 
+Personal-ledger mutations do not write personal history or `AuditLog`. This
+feature is independent of store accounts and dashboard figures. Method is optional/null and displays
+blank; there is no opening-balance workflow.
+
 Optional `summary` for list UIs. Never update/delete audit rows.
 See [`DATABASE.md`](docs/DATABASE.md).
 
@@ -175,13 +180,14 @@ Hard rules — never weaken for convenience.
 1. Roles: `super_admin` \| `admin` only for MVP. No permission-key catalog
    required yet.
 2. **User management** (create / deactivate admins): `super_admin` only.
-3. All other operational endpoints: `admin` **and** `super_admin`.
-4. No public self-registration. Initial super-admin provisioning is external; no first-user seed command is shipped.
-5. Access token: Bearer header. Refresh tokens: store **hash only** in
+3. Personal ledger (`personal-ledger`): `super_admin` only; all superadmins share all records. No owner filter or additional authentication.
+4. All other operational endpoints: `admin` **and** `super_admin`.
+5. No public self-registration. Initial super-admin provisioning is external; no first-user seed command is shipped.
+6. Access token: Bearer header. Refresh tokens: store **hash only** in
    Mongo; rotate and hard-delete old tokens on refresh/logout.
-6. Guard every protected route. Do not “fix” missing guards inside
+7. Guard every protected route. Do not “fix” missing guards inside
    services only — HTTP guards are the primary enforcement.
-7. The frontend may hide nav items; **the API is the authority**.
+8. The frontend may hide nav items; **the API is the authority**.
 
 ------------------------------------------------------------
 

@@ -128,6 +128,12 @@ into `dto/response/`; internal types and pure helpers remain in `types/` and `ut
 - Filter by actor, action, entity, and date range
 - List actors who appear in the log
 
+### Personal ledger (`/api/v1/personal-ledger`)
+
+- Shared superadmin-only people, deposits and withdrawals, independent of store accounts and KPIs.
+- Optional payment method/notes, Cairo dates, filtered totals and lifetime contact balances.
+- Add/rename people; edit and soft-delete movements without personal history.
+
 ### Health (`/api/v1/health`)
 
 - Public health check
@@ -264,7 +270,7 @@ inclusive Cairo calendar dates (`YYYY-MM-DD`); conflicting or invalid filters ar
 | `POST`   | `/api/v1/items/:id/dimension-defaults` | Both | Append one normalized dimension default |
 | `DELETE` | `/api/v1/items/:id`                    | Both | Soft-delete item                        |
 
-Item list query params: `categoryId`, `isActive`.
+Item list query params: `categoryId`, `isActive`. Embedded item `category` includes `createdAt` so invoice pickers order category groups oldest first without another request. Items remain alphabetical within each group. `GET /categories` returns categories by `createdAt` ascending, then `_id` for ties.
 
 ### Customers
 
@@ -380,6 +386,37 @@ Audit list query params: `userId`, `action`, `entityType`, `entityId`, `from`, `
 
 `from` and `to` are `YYYY-MM-DD`.
 
+### Personal ledger
+
+All routes require `super_admin`; every superadmin can manage all records.
+Responses use the existing `{ success: true, data }` envelope.
+
+| Method | Path | Auth | Description |
+| ------ | ---- | ---- | ----------- |
+| `GET` | `/api/v1/personal-ledger/contacts` | Super admin | Search/paginate people |
+| `POST` | `/api/v1/personal-ledger/contacts` | Super admin | Create person or link active customer |
+| `GET` | `/api/v1/personal-ledger/contacts/:id` | Super admin | Person with lifetime summary |
+| `PATCH` | `/api/v1/personal-ledger/contacts/:id` | Super admin | Rename person (existing active-state field remains supported) |
+| `GET` | `/api/v1/personal-ledger/movements` | Super admin | Filtered ledger with full-filter summary |
+| `POST` | `/api/v1/personal-ledger/movements` | Super admin | Record deposit/withdrawal |
+| `GET` | `/api/v1/personal-ledger/movements/:id` | Super admin | Movement detail |
+| `PATCH` | `/api/v1/personal-ledger/movements/:id` | Super admin | Edit movement |
+| `DELETE` | `/api/v1/personal-ledger/movements/:id` | Super admin | Terminal soft deletion |
+
+Contact query: `q`, `includeInactive`, `page`, `limit`; active contacts by default.
+Creation accepts exactly one of `name` or `customerId`. PATCH accepts `name`/`isActive`.
+Movement query: inclusive Cairo `from`/`to`, `q`, `contactId`, `page`, `limit`.
+Lists return `{ items, meta: { page, limit, total } }`; movement lists add
+`summary: { deposits, withdrawals, net, count }` across all matches before pagination.
+Movements sort by movement date, creation time and ID descending.
+
+Movement bodies use `contactId`, `type` (`deposit`/`withdrawal`), positive finite
+two-decimal EGP `amount`, past/today Cairo `movementDate` (`YYYY-MM-DD`), optional
+`method` and `notes`. Omitted method/notes persist as null; PATCH omission preserves
+values and explicit null clears them. The UI renders absent methods blank.
+There is no opening-balance entry or store-account effect. See
+[DATABASE.md](docs/DATABASE.md#personalledgermovement) for persistence rules.
+
 ### Health
 
 | Method | Path             | Auth | Description  |
@@ -391,7 +428,7 @@ Audit list query params: `userId`, `action`, `entityType`, `entityId`, `from`, `
 | Role        | Value         | Notes                                                                                                      |
 | ----------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
 | Admin       | `admin`       | Shop operations: catalog, invoices, payments, purchases, inventory, dashboard, audit. Cannot manage users. |
-| Super admin | `super_admin` | Everything an admin can do, plus create, update, and soft-delete users. Cannot change their own role.      |
+| Super admin | `super_admin` | Everything an admin can do, plus manage the shared personal ledger and create, update, and soft-delete users. Cannot change their own role.      |
 
 ## Testing
 

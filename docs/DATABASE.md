@@ -14,6 +14,10 @@ schema changes.
   mutable master data: `Category`, `Customer`, `Supplier`, `User`, `Item`.
 - **Immutable / append-only, never updated or deleted**: `ItemPriceHistory`,
   `AuditLog`.
+- **Personal ledger:** contacts archive with `isActive`; movements soft-delete
+  with `isDeleted`. Archive controls are absent from contact management; existing
+  active-state fields remain compatible. Personal history is retired: no model,
+  endpoint or new writes; existing stored history is left untouched.
 - **Hard deleted**: `RefreshToken` only — on logout, expiry, or rotation.
 - Money fields are plain numbers in EGP (ج.م). Round to 2 decimals at write
   time; never trust client-computed totals — recompute server-side.
@@ -430,6 +434,57 @@ collection at all — append-only.
 
 ---
 
+## PersonalLedgerContact
+
+| Field | Type | Notes |
+|---|---|---|
+| name | string | required; trimmed; max 200 characters; saved name independent of store renames |
+| customerId | ObjectId \| null | optional source customer; null for a ledger-only person |
+| isActive | boolean | default true; existing active-state flag; not exposed as an Archive action in contact management |
+| createdBy / updatedBy | ObjectId | user IDs for attribution, not ownership |
+| createdAt / updatedAt | date | |
+
+**Relationships:** 1 → many `PersonalLedgerMovement`; optional source `Customer`.
+**Indexes:** unique partial `customerId` where its type is ObjectId; compound
+`{ isActive: 1, name: 1, _id: 1 }`.
+**Rules:** creation accepts exactly one of `name` or an active store `customerId`.
+Sequential selection reuses an existing customer link. Store rename, merge or
+deletion does not synchronize the saved name. Archived contacts cannot receive
+new movements or replace another contact; an edited movement may retain its
+unchanged archived contact. Movement saves read the contact without counters or
+forced writes; the workflow assumes one active operator at a time.
+
+---
+
+## PersonalLedgerMovement
+
+| Field | Type | Notes |
+|---|---|---|
+| contactId | ObjectId | required; references `PersonalLedgerContact` |
+| type | enum | `deposit` \| `withdrawal` |
+| amount | number | positive finite EGP; at most two decimals; minimum 0.01 |
+| movementDate | string | real `YYYY-MM-DD` Cairo date; cannot be in the future |
+| method | PaymentMethod \| null | optional existing payment method; null displays as an empty string |
+| notes | string \| null | optional; trimmed; max 500 characters |
+| isDeleted | boolean | default false; terminal soft deletion |
+| createdBy / updatedBy | ObjectId | user IDs for attribution, not ownership |
+| createdAt / updatedAt | date | |
+
+**Relationships:** many → 1 `PersonalLedgerContact`.
+**Indexes:** `{ isDeleted: 1, movementDate: -1, createdAt: -1, _id: -1 }` and
+`{ contactId: 1, isDeleted: 1, movementDate: -1, createdAt: -1, _id: -1 }`.
+**Rules:** all superadmins share all movements. There is no opening-balance
+entry. PATCH omission preserves optional fields; explicit null clears method
+or notes. Required fields reject null. Deleted movements are excluded from
+reads and totals and cannot be edited or deleted again. Mutations use the existing Mongo transaction workflow without history writes.
+**Summaries:** deposits minus withdrawals gives signed net, which may be
+negative. Lists return `{ items, meta: { page, limit, total }, summary:
+{ deposits, withdrawals, net, count } }`. Inclusive date/search/contact filters
+apply before pagination; contact detail adds the same summary over its lifetime.
+No store account, invoice, payment, stock or dashboard totals are changed.
+
+---
+
 ## Relationship summary
 
 | From | To | Type |
@@ -452,6 +507,8 @@ collection at all — append-only.
 | PurchaseInvoice | SupplierPayment | 1 → many |
 | ItemPriceHistory | AuditLog | 1 → 1 (referenced via `refCollection`/`refId`) |
 | InvoiceCounter | SalesInvoice / PurchaseInvoice | supplies sequential numbers |
+| Customer | PersonalLedgerContact | optional source link; name snapshot does not synchronize |
+| PersonalLedgerContact | PersonalLedgerMovement | 1 → many |
 
 
 ## Optional phones and dimension contract
