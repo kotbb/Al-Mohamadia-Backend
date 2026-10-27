@@ -278,6 +278,10 @@ Two shapes — they do **not** affect `Customer.balance` the same way:
 Both shapes are logged in `AuditLog`. Active payment history should treat
 `reversedAt != null` as voided.
 
+Standalone payment cancellation may load a retained soft-deleted customer, just as supplier-payment cancellation can. Add the payment amount back to the retained signed balance, set reversal fields and write audit in one transaction. Leave `isDeleted`/`isActive` unchanged, including when the restored balance is nonzero. Physically missing accounts, repeat cancellations and direct cancellation of invoice-linked payments remain rejected. List display lookups still exclude deleted accounts and return null names; receipts retain their existing historical lookup behavior.
+
+Read responses add no stored fields: payment/purchase lists resolve account names per page; authenticated invoice details attach a basic account DTO and unique referenced non-deleted items. Optional category item counts and customer `summary.debtorCount` are aggregations over existing records, not stored counters or migrations.
+
 ---
 
 ## SupplierPayment
@@ -567,7 +571,7 @@ Authenticated and public receipt lines expose resolved `pricingModeSnapshot`, in
 - Sales-invoice listing accepts an optional validated `customerId` filter; purchase listing retains `supplierId`.
 - Sales/purchase create and update accept optional `accountPaymentAmount` (finite nonnegative, at most two decimals). This is independent from `paid`, which stays in `[0, net]`. Positive additional amounts create active standalone Payment/SupplierPayment rows with null lifecycle links (and a source-invoice provenance marker) and subtract from the account in the same transaction and audit trail. Purchase creation accepts the old `existingDebtPayment` name as an exclusive alias without a debt cap. Cash sales accept no positive account payment.
 - Standalone payment amounts are positive, finite two-decimal EGP; there is no maximum based on debt and no requirement for a positive account balance. Accounts must be active. Negative running balance is account credit. Deletion remains blocked for every nonzero balance.
-- Invoice edit reconciles invoice payment only and adds an account payment only when explicitly supplied. Invoice cancellation and reassignment preserve independent account payments. Cancellation of such a payment separately adds its amount back to account debt. Invoice details/modal/receipt/print/PDF show combined invoice plus origin-linked active account payments, with a conditional breakdown. Persisted `paid` and `remaining` retain invoice settlement semantics.
+- Invoice edit reconciles invoice payment only and adds an account payment only when explicitly supplied. Invoice cancellation and reassignment preserve independent account payments. Cancellation of such a payment separately adds its amount back to account debt. Invoice details/export preview/receipt/print/PDF show combined invoice plus origin-linked active account payments, with a conditional breakdown. Persisted `paid` and `remaining` retain invoice settlement semantics.
 - Future invoices add their unpaid amount to the signed account balance. Credit is not automatically allocated to invoice `paid`.
 
 

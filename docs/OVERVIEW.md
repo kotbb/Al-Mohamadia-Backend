@@ -322,12 +322,22 @@ and [current seed/maintenance limitations](../README.md#seed-data-development).
 
 Customer/supplier detail pages show three KPIs: lifetime net invoice totals, active payments, and signed current balance, followed by separate invoice and payment histories. Create accepts an optional starting Balance. Edit shows the actual current Balance and saves an intentional correction directly, with old/new amounts and the difference recorded automatically in the same transaction. Corrections do not change invoices, payments, or their totals. Negative balances represent credit. There is no separate opening balance, legacy derivation, migration, or backfill; existing database records are untouched.
 
-Invoice creation and editing expose one **Paid amount** field. The form caps the invoice payment at net, keeps remaining at zero when overpaid, and automatically records the difference as an additional account payment, explained inline. The resulting account debt/credit preview remains visible. Saved invoice details, modal, print/PDF and public receipt show the combined paid total and, when an origin-linked extra exists, a parenthesized invoice-plus-previous-debt breakdown; the additional amount reduces account debt or creates advance credit. It is recorded in payment history and remains active if that invoice is edited, reassigned, or cancelled. Cancel it separately when necessary. Standalone payments can also create credit. Existing credit offsets future account debt without changing individual invoice settlement.
+Invoice creation and editing expose one **Paid amount** field. The form caps the invoice payment at net, keeps remaining at zero when overpaid, and automatically records the difference as an additional account payment, explained inline. The resulting account debt/credit preview remains visible. Saved invoice details, export preview, print/PDF and public receipt show the combined paid total and, when an origin-linked extra exists, a parenthesized invoice-plus-previous-debt breakdown; the additional amount reduces account debt or creates advance credit. It is recorded in payment history and remains active if that invoice is edited, reassigned, or cancelled. Cancel it separately when necessary. Standalone payments can also create credit. Existing credit offsets future account debt without changing individual invoice settlement.
 
 Sales creation defaults to Customer Sale, with a single searchable customer selection field rather than separate search and select controls.
 
 
 Additional account payments now retain source-invoice provenance (`Payment.sourceInvoiceId`, `SupplierPayment.sourcePurchaseInvoiceId`) separately from lifecycle links. Invoice/public responses expose active same-party `accountPaymentAmount`; the UI combines it with invoice `paid` for display only. Earlier payments without provenance are not inferred or backfilled from matching timestamps/amounts. Selected customers use the same muted summary panel as suppliers and a Change customer action to reopen the single search dropdown.
+
+## Complete page responses
+
+Customer Payments, Supplier Payments and Purchase Invoices return nullable current account names with list rows through a projected, lean lookup of the page's distinct account IDs. Missing/deleted accounts return null; inactive accounts keep their names. The frontend uses one list request without a name cache or background account-detail requests and renders null as an unlinked `-`. Sales invoice list behavior is unchanged.
+
+Authenticated invoice details add a basic `customer`/`supplier` DTO (null for deleted/missing accounts) and `items`, limited to unique non-deleted referenced items, including inactive originals. Account, item and additional-payment reads run in parallel after invoice retrieval. Editors hydrate from this data and merge the active catalog without dropping original inactive selections. Account financial summaries are not recalculated for hydration. Mutation and public receipt responses remain unchanged.
+
+Category lists opt into non-deleted item counts with `includeItemCount=true`; inactive/free-amount items count too, and ordinary category requests skip this aggregation. Customer lists include positive-balance `summary.debtorCount` in the existing filtered aggregation, removing the second KPI-only request.
+
+Standalone customer-payment cancellation supports retained soft-deleted customers. It saves balance, payment reversal and audit together, preserving deletion/active flags. A nonzero restored balance remains excluded from ordinary account lists. Missing accounts, repeat cancellation and direct invoice-linked cancellation remain errors. No schema/index changes, migration or backfill are involved.
 
 ## Inventory category pagination
 

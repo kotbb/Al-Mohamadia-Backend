@@ -1,3 +1,6 @@
+import { PurchaseInvoiceDetailResponseDto } from './dto/response/purchase-invoice-response.dto';
+import { toSupplierResponseDto } from '../suppliers/utils/supplier-response.util';
+import { toItemResponseDto } from '../items/utils/item-response.util';
 import { validateLineValues } from '../../shared/utils/volume/validate-line-values.util';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -262,10 +265,16 @@ export class PurchasesService {
     ]);
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
-    const accountPayments = await this.accountPaymentAmounts(docs);
+    const [accountPayments, supplierNames] = await Promise.all([
+      this.accountPaymentAmounts(docs),
+      this.supplierNamesForRows(docs),
+    ]);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0)),
+      items: docs.map((doc) => ({
+        ...this.toResponseDto(doc, accountPayments.get(doc._id.toString()) ?? 0),
+        supplierName: supplierNames.get(doc.supplierId.toString()) ?? null,
+      })),
       meta: {
         page,
         limit,
@@ -277,12 +286,29 @@ export class PurchasesService {
     };
   }
 
-  public async findOne(id: string): Promise<PurchaseInvoiceResponseDto> {
+  public async findOne(id: string): Promise<PurchaseInvoiceDetailResponseDto> {
     const invoice = await this.purchaseInvoiceModel.findById(id).exec();
     if (!invoice) {
       throw new NotFoundException('Purchase invoice not found');
     }
-    return this.toResponseWithAccountPayment(invoice);
+    const itemIds = [...new Set(invoice.lines.map((line) => line.itemId.toString()))];
+    const [response, supplier, items] = await Promise.all([
+      this.toResponseWithAccountPayment(invoice),
+      invoice.supplierId
+        ? this.supplierModel.findOne({ _id: invoice.supplierId, isDeleted: false }).exec()
+        : Promise.resolve(null),
+      itemIds.length > 0
+        ? this.itemModel
+            .find({ _id: { $in: itemIds.map((itemId) => new Types.ObjectId(itemId)) }, isDeleted: false })
+            .populate('categoryId', 'name createdAt')
+            .exec()
+        : Promise.resolve([]),
+    ]);
+    return {
+      ...response,
+      supplier: supplier ? toSupplierResponseDto(supplier) : null,
+      items: items.map(toItemResponseDto),
+    };
   }
 
   public async update(id: string, dto: UpdatePurchaseInvoiceDto, user: AuthUser): Promise<PurchaseInvoiceResponseDto> {
@@ -777,6 +803,17 @@ export class PurchasesService {
   ): Promise<PurchaseInvoiceResponseDto> {
     const amounts = await this.accountPaymentAmounts([invoice], session);
     return this.toResponseDto(invoice, amounts.get(invoice._id.toString()) ?? 0);
+  }
+
+  private async supplierNamesForRows(rows: PurchaseInvoiceDocument[]): Promise<Map<string, string>> {
+    const ids = [...new Set(rows.map((row) => row.supplierId.toString()))];
+    if (ids.length === 0) return new Map();
+    const accounts = await this.supplierModel
+      .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, isDeleted: false })
+      .select('_id name')
+      .lean()
+      .exec();
+    return new Map(accounts.map((account) => [account._id.toString(), account.name]));
   }
 
   private toResponseDto(invoice: PurchaseInvoiceDocument, accountPaymentAmount = 0): PurchaseInvoiceResponseDto {

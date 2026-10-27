@@ -173,6 +173,7 @@ describe('CustomersService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.meta).toEqual({ page: 1, limit: 20, total: 1 });
       expect(result.summary.totalDebt).toBe(100);
+      expect(result.summary).toHaveProperty('debtorCount', 0);
       expect(customerModel.aggregate).toHaveBeenCalled();
     });
   });

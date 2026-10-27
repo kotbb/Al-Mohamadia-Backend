@@ -1,3 +1,6 @@
+import { SalesInvoiceDetailResponseDto } from './dto/response/sales-invoice-response.dto';
+import { toCustomerResponseDto } from '../customers/utils/customer-response.util';
+import { toItemResponseDto } from '../items/utils/item-response.util';
 import { validateLineValues } from '../../shared/utils/volume/validate-line-values.util';
 import { InvoiceNeighborsResponseDto } from './dto/response/invoice-neighbors-response.dto';
 import { INVOICE_NUMBER_COLLATION } from './constants/invoice-navigation.constant';
@@ -265,9 +268,26 @@ export class SalesInvoicesService {
   }
 
   // Get a single sales invoice
-  public async findOne(id: string): Promise<SalesInvoiceResponseDto> {
+  public async findOne(id: string): Promise<SalesInvoiceDetailResponseDto> {
     const invoice = await this.requireInvoiceById(id);
-    return this.toResponseWithAccountPayment(invoice);
+    const itemIds = [...new Set(invoice.lines.map((line) => line.itemId.toString()))];
+    const [response, customer, items] = await Promise.all([
+      this.toResponseWithAccountPayment(invoice),
+      invoice.customerId
+        ? this.customerModel.findOne({ _id: invoice.customerId, isDeleted: false }).exec()
+        : Promise.resolve(null),
+      itemIds.length > 0
+        ? this.itemModel
+            .find({ _id: { $in: itemIds.map((itemId) => new Types.ObjectId(itemId)) }, isDeleted: false })
+            .populate('categoryId', 'name createdAt')
+            .exec()
+        : Promise.resolve([]),
+    ]);
+    return {
+      ...response,
+      customer: customer ? toCustomerResponseDto(customer) : null,
+      items: items.map(toItemResponseDto),
+    };
   }
 
   // Cancel a sales invoice

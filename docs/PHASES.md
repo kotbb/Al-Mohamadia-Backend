@@ -511,7 +511,7 @@ the new paths. This refactor preserves validation, API payloads and persistence.
 - New invoice links preselect the account; payment/edit actions are in the header. Account action buttons are removed from detail pages; lifecycle/delete remain available on list pages. Customer detail invoice history omits its redundant customer column.
 - One Balance field uses customer `balance` and supplier `amountOwed` on create and PATCH. Creation accepts an optional starting amount; editing sets the actual current amount. Signed finite two-decimal values support debt and credit. Automatic audit includes old/new values and the adjustment difference in the same transaction; invoices and payments remain unchanged. Contact-only edits omit an unchanged balance. No opening-balance field, migration, derivation, or backfill remains; existing records are untouched.
 - Sales and purchase creation/editing have one entered paid amount, split automatically into invoice payment and excess account payment. Remaining never falls below zero; an inline message explains the excess. API `paid` remains capped by invoice net. `accountPaymentAmount` is independent, may exceed account debt, and creates a standalone payment in the same transaction. Purchase create retains `existingDebtPayment` as an exclusive compatibility alias.
-- Invoice details/modal/receipt/print/PDF show invoice paid plus active origin-linked account payments, with a conditional invoice/previous-debt breakdown. Remaining continues to use invoice paid only. Additional account payments persist through invoice edits, reassignment, and cancellation and can be cancelled separately.
+- Invoice details/export preview/receipt/print/PDF show invoice paid plus active origin-linked account payments, with a conditional invoice/previous-debt breakdown. Remaining continues to use invoice paid only. Additional account payments persist through invoice edits, reassignment, and cancellation and can be cancelled separately.
 - Standalone payments allow advance credit on active accounts with no debt or existing credit. Credit offsets future account charges without allocating payment to future invoices.
 - Verification: architecture checks/tests, frontend form/receipt tests, backend unit and temporary MongoDB replica-set tests, builds and lint; manual UI checklist without agent browser access.
 
@@ -535,7 +535,14 @@ Payment-history notes distinguish additional account payments while preserving u
 - [x] Items and Inventory search by item name only; invoice selectors retain item/category-name search. Inventory and dashboard top-selling-item responses no longer include a code.
 - [x] Legacy database fields and their single-field index are removed only by the manual cleanup procedure, never automatically at application startup. Historical audit records remain unchanged.
 
-### Invoice-list customer names
+### Complete page loading and deleted-account cancellation
+
+- [x] Payment and purchase lists resolve current names in one page-bounded batch; deleted/missing names return null and the UI renders unlinked `-`, preserving inactive names and cash labels.
+- [x] Authenticated invoice details supply the basic selected account and only referenced items; editors reuse them with race-safe active-catalog merging. Public receipt/export behavior is preserved and the unused alternate preview modal is retired.
+- [x] Category item counts are opt-in server aggregations; customer debtor counts share the existing list summary, eliminating extra catalog/KPI requests.
+- [x] Standalone customer-payment cancellation supports retained deleted accounts with transactional balance/reversal/audit and unchanged deletion flags. Missing accounts and repeated/invoice-linked cancellation remain rejected. No schema/index/data migration.
+
+### Existing sales-list behavior
 
 - [x] Sales invoice list items include current nullable customer names through one projected, lean, page-bounded batch lookup. Cash-only and empty pages skip it; missing/soft-deleted customers use null, and inactive names remain visible.
 - [x] Frontend list rows load in one request without customer-detail calls or a name cache. Pagination, filters, totals and refresh/error/abort behavior remain intact. No migration, schema change, or new index is required.

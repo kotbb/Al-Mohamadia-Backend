@@ -51,6 +51,25 @@ describe('SalesInvoicesService', () => {
   const customerId = '507f1f77bcf86cd799439003';
   const invoiceId = '507f1f77bcf86cd799439004';
 
+  it('hydrates detail with unique referenced items and a basic inactive customer', async () => {
+    const invoice = makeInvoice();
+    invoice.lines.push(invoice.lines[0]);
+    salesInvoiceModel.findById.mockReturnValue({ exec: () => Promise.resolve(invoice) });
+    customerModel.findOne.mockReturnValue({
+      exec: () => Promise.resolve(makeCustomer({ isActive: false, get: () => undefined })),
+    });
+    const item = makeItem({ categoryId: { _id: itemId, name: 'Category' }, get: () => undefined });
+    const populate = jest.fn().mockReturnValue({ exec: () => Promise.resolve([item]) });
+    itemModel.find.mockReturnValue({ populate });
+    const result = await service.findOne(invoiceId);
+    expect(result.customer).toMatchObject({ id: customerId, isActive: false });
+    expect(result.customer).not.toHaveProperty('financialSummary');
+    expect(result.items).toHaveLength(1);
+    expect(itemModel.find).toHaveBeenCalledWith({ _id: { $in: [new Types.ObjectId(itemId)] }, isDeleted: false });
+    expect(populate).toHaveBeenCalledWith('categoryId', 'name createdAt');
+    expect(salesInvoiceModel.aggregate).not.toHaveBeenCalled();
+  });
+
   const makeItem = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => itemId },
     name: 'لوح MDF',

@@ -274,6 +274,8 @@ Item list query params: `categoryId`, `isActive`. Embedded item `category` inclu
 
 ### Customers
 
+List summaries include `debtorCount` (matching customers with positive balances) alongside `totalDebt`, so rows and KPIs require one request. `GET /categories?includeItemCount=true` returns each category's non-deleted item count, including inactive/free-amount items; ordinary category requests skip that aggregation.
+
 | Method   | Path                      | Auth | Description               |
 | -------- | ------------------------- | ---- | ------------------------- |
 | `POST`   | `/api/v1/customers`       | Both | Create customer           |
@@ -332,6 +334,10 @@ invoices, skips gaps and returns null at boundaries.
 
 Payment list query params: `customerId`, `invoiceId`, `status`, `type`, `method`, `period`, `date`, `from`, `to`, `page`, `limit`.
 
+Payment-list rows include nullable `customerName`; supplier-payment and purchase-list rows include nullable `supplierName`. Each list resolves only its page's distinct accounts with a projected batch lookup.
+
+Standalone payment cancellation supports retained soft-deleted customers and suppliers. Payment reversal, balance restoration and audit are atomic; cancellation never reactivates an account, even if its balance becomes nonzero. Missing accounts, repeated cancellation and direct invoice-linked payment cancellation remain rejected.
+
 ### Purchases
 
 | Method | Path                           | Auth | Description             |
@@ -343,6 +349,8 @@ Payment list query params: `customerId`, `invoiceId`, `status`, `type`, `method`
 | `POST` | `/api/v1/purchases/:id/cancel` | Both | Cancel purchase         |
 
 Purchase list query params: `q`, `supplierId`, `status`, `period`, `date`, `from`, `to`, `page`, `limit`.
+
+Authenticated `GET /sales-invoices/:id` and `GET /purchases/:id` add `customer`/`supplier` (a basic account DTO or null) and `items` (only unique referenced, non-deleted items, including inactive items). These serve details/edit hydration without full-catalog or per-item requests or account financial-summary queries. List and mutation contracts remain separate; public receipts retain their historical-name behavior. Deploy the additive backend responses before the updated frontend.
 
 ### Supplier payments
 

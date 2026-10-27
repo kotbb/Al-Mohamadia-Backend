@@ -1,3 +1,5 @@
+import { CustomerResponseDto } from '../../../customers/dto/response/customer-response.dto';
+import { ItemResponseDto } from '../../../items/dto/response/item-response.dto';
 import { PricingMode } from '../../../../shared/enums/pricing-mode.enum';
 import { SalesInvoiceStatus } from '../../../../shared/enums/sales-invoice-status.enum';
 import { SalesInvoiceType } from '../../../../shared/enums/sales-invoice-type.enum';
@@ -48,4 +50,9 @@ export class SalesInvoiceListResponseDto {
     total: number;
   };
   summary: SalesInvoiceListSummaryDto;
+}
+
+export class SalesInvoiceDetailResponseDto extends SalesInvoiceResponseDto {
+  customer: CustomerResponseDto | null;
+  items: ItemResponseDto[];
 }

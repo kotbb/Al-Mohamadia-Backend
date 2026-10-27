@@ -1,3 +1,4 @@
+import { toItemResponseDto } from './utils/item-response.util';
 import { categoryRefId, categoryRefName } from './utils/category-reference.util';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -94,7 +95,7 @@ export class ItemsService {
 
       await session.commitTransaction();
       await created.populate('categoryId', 'name createdAt');
-      return this.toResponseDto(created);
+      return toItemResponseDto(created);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -122,7 +123,7 @@ export class ItemsService {
 
     const items = await this.itemModel.find(filter).populate('categoryId', 'name createdAt').sort({ name: 1 }).exec();
 
-    return items.map((item) => this.toResponseDto(item));
+    return items.map((item) => toItemResponseDto(item));
   }
 
   // Find One Item
@@ -134,7 +135,7 @@ export class ItemsService {
     if (!item) {
       throw new NotFoundException('Item not found');
     }
-    return this.toResponseDto(item);
+    return toItemResponseDto(item);
   }
 
   // Update Item
@@ -212,7 +213,7 @@ export class ItemsService {
     }
 
     if (Object.keys(changes).length === 0) {
-      return this.toResponseDto(item);
+      return toItemResponseDto(item);
     }
 
     const session = await this.connection.startSession();
@@ -236,7 +237,7 @@ export class ItemsService {
 
       await session.commitTransaction();
       await item.populate('categoryId', 'name createdAt');
-      return this.toResponseDto(item);
+      return toItemResponseDto(item);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -281,7 +282,7 @@ export class ItemsService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(item);
+      return toItemResponseDto(item);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -384,7 +385,7 @@ export class ItemsService {
       await item.save({ session });
       await session.commitTransaction();
       await item.populate('categoryId', 'name createdAt');
-      return this.toResponseDto(item);
+      return toItemResponseDto(item);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -468,35 +469,4 @@ export class ItemsService {
   }
 
   // ----------------- Helper Methods -----------------
-  private toResponseDto(item: ItemDocument): ItemResponseDto {
-    const category = item.categoryId as unknown as {
-      _id: { toString: () => string };
-      name: string;
-      createdAt?: Date;
-    };
-
-    return {
-      id: item._id.toString(),
-      name: item.name,
-      category: {
-        id:
-          typeof category === 'object' && category !== null && '_id' in category
-            ? category._id.toString()
-            : item.categoryId.toString(),
-        name: typeof category === 'object' && category !== null && 'name' in category ? category.name : '',
-        createdAt: category?.createdAt,
-      },
-      isWood: item.isWood,
-      pricingMode: item.pricingMode,
-      dimensionDefaults: normalizeDimensionDefaults(item.dimensionDefaults),
-      unitPrice: item.unitPrice,
-      cost: item.cost,
-      stockQuantity: item.stockQuantity,
-      reorderThreshold: item.reorderThreshold,
-      isActive: item.isActive,
-      isDeleted: item.isDeleted,
-      createdAt: item.get('createdAt') as Date | undefined,
-      updatedAt: item.get('updatedAt') as Date | undefined,
-    };
-  }
 }

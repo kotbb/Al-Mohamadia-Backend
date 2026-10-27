@@ -28,8 +28,12 @@ export class SupplierPaymentListSummaryDto {
   totalAmount: number;
 }
 
+export class SupplierPaymentListItemResponseDto extends SupplierPaymentResponseDto {
+  declare supplierName: string | null;
+}
+
 export class SupplierPaymentListResponseDto {
-  items: SupplierPaymentResponseDto[];
+  items: SupplierPaymentListItemResponseDto[];
   meta: SupplierPaymentListMetaDto;
   summary: SupplierPaymentListSummaryDto;
 }

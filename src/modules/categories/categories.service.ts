@@ -1,3 +1,4 @@
+import { Item, ItemDocument } from '../items/schemas/item.schema';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
@@ -14,6 +15,7 @@ export class CategoriesService {
   constructor(
     @InjectModel(Category.name)
     private readonly categoryModel: Model<CategoryDocument>,
+    @InjectModel(Item.name) private readonly itemModel: Model<ItemDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly auditService: AuditService,
   ) {}
@@ -68,9 +70,21 @@ export class CategoriesService {
   }
 
   // Find All Categories
-  public async findAll(): Promise<CategoryResponseDto[]> {
+  public async findAll(includeItemCount = false): Promise<CategoryResponseDto[]> {
     const categories = await this.categoryModel.find({ isDeleted: false }).sort({ createdAt: 1, _id: 1 }).exec();
-    return categories.map((category) => this.toResponseDto(category));
+    if (categories.length === 0) return [];
+    if (!includeItemCount) return categories.map((category) => this.toResponseDto(category));
+    const rows = await this.itemModel
+      .aggregate<{ _id: Types.ObjectId; itemCount: number }>([
+        { $match: { isDeleted: false, categoryId: { $in: categories.map((category) => category._id) } } },
+        { $group: { _id: '$categoryId', itemCount: { $sum: 1 } } },
+      ])
+      .exec();
+    const counts = new Map(rows.map((row) => [row._id.toString(), row.itemCount]));
+    return categories.map((category) => ({
+      ...this.toResponseDto(category),
+      itemCount: counts.get(category._id.toString()) ?? 0,
+    }));
   }
 
   // Find One Category

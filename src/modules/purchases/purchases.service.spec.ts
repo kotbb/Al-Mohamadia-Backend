@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Types } from 'mongoose';
 import { UserRole } from '../../shared/auth/enums/user-role.enum';
 import { AuthUser } from '../../shared/auth/interfaces/auth-user.interface';
 import { PricingMode } from '../../shared/enums/pricing-mode.enum';
@@ -57,6 +58,39 @@ describe('PurchasesService', () => {
   const itemIdPiece = '507f1f77bcf86cd799439022';
   const itemIdCubic = '507f1f77bcf86cd799439033';
   const purchaseId = '507f1f77bcf86cd799439044';
+
+  it('hydrates detail with a nullable supplier and unique referenced inactive items', async () => {
+    const invoice = {
+      _id: new Types.ObjectId(purchaseId),
+      supplierId: new Types.ObjectId(supplierId),
+      invoiceNumber: 'PUR-0042',
+      lines: [
+        { itemId: new Types.ObjectId(itemIdPiece), quantity: 1, unitCost: 10, lineTotal: 10 },
+        { itemId: new Types.ObjectId(itemIdPiece), quantity: 1, unitCost: 10, lineTotal: 10 },
+      ],
+      total: 20,
+      paid: 0,
+      remaining: 20,
+      status: PurchaseInvoiceStatus.SAVED,
+      createdBy: new Types.ObjectId(actor.id),
+      get: () => undefined,
+    };
+    purchaseInvoiceModel.findById.mockReturnValue(mockQuery(invoice));
+    supplierModel.findOne.mockReturnValue(mockQuery(null));
+    const item = makePieceItem({
+      isActive: false,
+      categoryId: { _id: itemIdPiece, name: 'Category' },
+      get: () => undefined,
+    });
+    const populate = jest.fn().mockReturnValue(mockQuery([item]));
+    itemModel.find.mockReturnValue({ populate });
+    const result = await service.findOne(purchaseId);
+    expect(result.supplier).toBeNull();
+    expect(result.items).toMatchObject([{ id: itemIdPiece, isActive: false }]);
+    expect(itemModel.find).toHaveBeenCalledWith({ _id: { $in: [new Types.ObjectId(itemIdPiece)] }, isDeleted: false });
+    expect(populate).toHaveBeenCalledWith('categoryId', 'name createdAt');
+    expect(purchaseInvoiceModel.aggregate).not.toHaveBeenCalled();
+  });
 
   const makeSupplier = (overrides: Record<string, unknown> = {}) => ({
     _id: { toString: () => supplierId },
@@ -131,7 +165,9 @@ describe('PurchasesService', () => {
     supplierModel = {
       findOne: jest.fn(),
       findById: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockReturnValue({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve([{ _id: supplierId, name: 'Supplier' }]) }) }),
+      }),
     };
 
     itemModel = {
@@ -906,6 +942,7 @@ describe('PurchasesService', () => {
       expect(result.items.length).toBe(1);
       expect(result.meta.total).toBe(1);
       expect(result.summary.totalAmount).toBe(1000);
+      expect(result.items[0].supplierName).toBe('Supplier');
     });
 
     it('searches by q across invoice number and supplier name/phone', async () => {

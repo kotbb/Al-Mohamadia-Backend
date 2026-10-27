@@ -19,6 +19,7 @@ export class CustomerListMetaDto {
 
 export class CustomerListSummaryDto {
   totalDebt: number;
+  debtorCount: number;
 }
 
 export class CustomerListResponseDto {

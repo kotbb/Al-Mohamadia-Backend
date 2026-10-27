@@ -1,3 +1,4 @@
+import { toCustomerResponseDto } from './utils/customer-response.util';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
@@ -89,7 +90,7 @@ export class CustomersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(created);
+      return toCustomerResponseDto(created);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -108,17 +109,23 @@ export class CustomersService {
       this.customerModel.find(filter).sort({ balance: -1, name: 1 }).skip(skip).limit(limit).exec(),
       this.customerModel.countDocuments(filter).exec(),
       this.customerModel
-        .aggregate<{ totalDebt: number }>([
+        .aggregate<{ totalDebt: number; debtorCount: number }>([
           { $match: filter },
-          { $group: { _id: null, totalDebt: { $sum: '$balance' } } },
+          {
+            $group: {
+              _id: null,
+              totalDebt: { $sum: '$balance' },
+              debtorCount: { $sum: { $cond: [{ $gt: ['$balance', 0] }, 1, 0] } },
+            },
+          },
         ])
         .exec(),
     ]);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc)),
+      items: docs.map((doc) => toCustomerResponseDto(doc)),
       meta: { page, limit, total },
-      summary: { totalDebt: roundMoney(summaryRows[0]?.totalDebt ?? 0) },
+      summary: { totalDebt: roundMoney(summaryRows[0]?.totalDebt ?? 0), debtorCount: summaryRows[0]?.debtorCount ?? 0 },
     };
   }
 
@@ -194,7 +201,7 @@ export class CustomersService {
 
       if (Object.keys(changes).length === 0) {
         await session.commitTransaction();
-        return this.toResponseDto(customer);
+        return toCustomerResponseDto(customer);
       }
       await customer.save({ session });
       await this.auditService.log(
@@ -211,7 +218,7 @@ export class CustomersService {
         session,
       );
       await session.commitTransaction();
-      return this.toResponseDto(customer);
+      return toCustomerResponseDto(customer);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -256,7 +263,7 @@ export class CustomersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(customer);
+      return toCustomerResponseDto(customer);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -374,7 +381,7 @@ export class CustomersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(target);
+      return toCustomerResponseDto(target);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -418,22 +425,8 @@ export class CustomersService {
     const totalInvoiced = roundMoney(invoiceRows[0]?.total ?? 0);
     const totalPaid = roundMoney(paymentRows[0]?.total ?? 0);
     return {
-      ...this.toResponseDto(customer),
+      ...toCustomerResponseDto(customer),
       financialSummary: { totalInvoiced, totalPaid },
-    };
-  }
-
-  private toResponseDto(customer: CustomerDocument): CustomerResponseDto {
-    return {
-      id: customer._id.toString(),
-      name: customer.name,
-      phone: customer.phone ?? null,
-      address: customer.address ?? null,
-      balance: customer.balance,
-      isActive: customer.isActive,
-      isDeleted: customer.isDeleted,
-      createdAt: customer.get('createdAt') as Date | undefined,
-      updatedAt: customer.get('updatedAt') as Date | undefined,
     };
   }
 }

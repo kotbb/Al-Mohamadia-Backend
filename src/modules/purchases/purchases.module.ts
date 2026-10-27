@@ -1,3 +1,4 @@
+import { Category, CategorySchema } from '../categories/schemas/category.schema';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuditModule } from '../audit/audit.module';
@@ -12,6 +13,7 @@ import { PurchaseInvoice, PurchaseInvoiceSchema } from './schemas/purchase-invoi
 @Module({
   imports: [
     MongooseModule.forFeature([
+      { name: Category.name, schema: CategorySchema },
       { name: PurchaseInvoice.name, schema: PurchaseInvoiceSchema },
       { name: InvoiceCounter.name, schema: InvoiceCounterSchema },
       { name: Supplier.name, schema: SupplierSchema },

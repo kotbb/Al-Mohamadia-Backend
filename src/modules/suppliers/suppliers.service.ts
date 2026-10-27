@@ -1,3 +1,4 @@
+import { toSupplierResponseDto } from './utils/supplier-response.util';
 import { SupplierPayment, SupplierPaymentDocument } from '../supplier-payments/schemas/supplier-payment.schema';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -91,7 +92,7 @@ export class SuppliersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(created);
+      return toSupplierResponseDto(created);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -118,7 +119,7 @@ export class SuppliersService {
     ]);
 
     return {
-      items: docs.map((doc) => this.toResponseDto(doc)),
+      items: docs.map((doc) => toSupplierResponseDto(doc)),
       meta: { page, limit, total },
       summary: { totalOwed: roundMoney(summaryRows[0]?.totalOwed ?? 0) },
     };
@@ -196,7 +197,7 @@ export class SuppliersService {
 
       if (Object.keys(changes).length === 0) {
         await session.commitTransaction();
-        return this.toResponseDto(supplier);
+        return toSupplierResponseDto(supplier);
       }
       await supplier.save({ session });
       await this.auditService.log(
@@ -213,7 +214,7 @@ export class SuppliersService {
         session,
       );
       await session.commitTransaction();
-      return this.toResponseDto(supplier);
+      return toSupplierResponseDto(supplier);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -258,7 +259,7 @@ export class SuppliersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(supplier);
+      return toSupplierResponseDto(supplier);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -378,7 +379,7 @@ export class SuppliersService {
       );
 
       await session.commitTransaction();
-      return this.toResponseDto(target);
+      return toSupplierResponseDto(target);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -421,22 +422,8 @@ export class SuppliersService {
     const totalInvoiced = roundMoney(invoiceRows[0]?.total ?? 0);
     const totalPaid = roundMoney(paymentRows[0]?.total ?? 0);
     return {
-      ...this.toResponseDto(supplier),
+      ...toSupplierResponseDto(supplier),
       financialSummary: { totalInvoiced, totalPaid },
-    };
-  }
-
-  private toResponseDto(supplier: SupplierDocument): SupplierResponseDto {
-    return {
-      id: supplier._id.toString(),
-      name: supplier.name,
-      phone: supplier.phone,
-      address: supplier.address ?? null,
-      amountOwed: supplier.amountOwed,
-      isActive: supplier.isActive,
-      isDeleted: supplier.isDeleted,
-      createdAt: supplier.get('createdAt') as Date | undefined,
-      updatedAt: supplier.get('updatedAt') as Date | undefined,
     };
   }
 }

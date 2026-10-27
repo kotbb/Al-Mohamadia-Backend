@@ -143,7 +143,7 @@ export class PaymentsService {
       }
 
       const lockedCustomer = await this.customerModel
-        .findOne({ _id: lockedPayment.customerId, isDeleted: false })
+        .findOne({ _id: lockedPayment.customerId })
         .session(session)
         .exec();
 
@@ -216,8 +216,12 @@ export class PaymentsService {
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
 
+    const names = await this.customerNamesForRows(rawPayments);
     return {
-      items: rawPayments.map((p) => this.toResponseDto(p)),
+      items: rawPayments.map((p) => ({
+        ...this.toResponseDto(p),
+        customerName: p.customerId ? (names.get(p.customerId.toString()) ?? null) : null,
+      })),
       meta: {
         page,
         limit,
@@ -290,6 +294,17 @@ export class PaymentsService {
     }
 
     return filter;
+  }
+
+  private async customerNamesForRows(rows: PaymentDocument[]): Promise<Map<string, string>> {
+    const ids = [...new Set(rows.filter((row) => row.customerId).map((row) => row.customerId!.toString()))];
+    if (ids.length === 0) return new Map();
+    const accounts = await this.customerModel
+      .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, isDeleted: false })
+      .select('_id name')
+      .lean()
+      .exec();
+    return new Map(accounts.map((account) => [account._id.toString(), account.name]));
   }
 
   private toResponseDto(payment: PaymentDocument): PaymentResponseDto {

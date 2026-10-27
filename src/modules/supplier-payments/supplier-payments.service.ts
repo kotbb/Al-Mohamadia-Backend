@@ -219,8 +219,12 @@ export class SupplierPaymentsService {
 
     const totalAmount = summaryAgg.length > 0 ? roundMoney(summaryAgg[0].totalAmount) : 0;
 
+    const names = await this.supplierNamesForRows(rawPayments);
     return {
-      items: rawPayments.map((p) => this.toResponseDto(p)),
+      items: rawPayments.map((p) => ({
+        ...this.toResponseDto(p),
+        supplierName: p.supplierId ? (names.get(p.supplierId.toString()) ?? null) : null,
+      })),
       meta: {
         page,
         limit,
@@ -293,6 +297,17 @@ export class SupplierPaymentsService {
     }
 
     return filter;
+  }
+
+  private async supplierNamesForRows(rows: SupplierPaymentDocument[]): Promise<Map<string, string>> {
+    const ids = [...new Set(rows.filter((row) => row.supplierId).map((row) => row.supplierId.toString()))];
+    if (ids.length === 0) return new Map();
+    const accounts = await this.supplierModel
+      .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, isDeleted: false })
+      .select('_id name')
+      .lean()
+      .exec();
+    return new Map(accounts.map((account) => [account._id.toString(), account.name]));
   }
 
   private toResponseDto(payment: SupplierPaymentDocument): SupplierPaymentResponseDto {

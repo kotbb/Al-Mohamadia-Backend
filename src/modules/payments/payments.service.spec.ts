@@ -23,6 +23,7 @@ describe('PaymentsService', () => {
     aggregate: jest.Mock;
   };
   let customerModel: {
+    find: jest.Mock;
     findOne: jest.Mock;
     findById: jest.Mock;
   };
@@ -96,6 +97,9 @@ describe('PaymentsService', () => {
     };
 
     customerModel = {
+      find: jest.fn().mockReturnValue({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve([{ _id: customerId, name: 'Customer' }]) }) }),
+      }),
       findOne: jest.fn(),
       findById: jest.fn(),
     };
@@ -396,5 +400,47 @@ describe('PaymentsService', () => {
 
       await expect(service.findOne(paymentId)).rejects.toThrow(NotFoundException);
     });
+  });
+  it('cancels a payment for a deleted inactive customer without restoring flags', async () => {
+    const customer = makeCustomer({ isDeleted: true, isActive: false });
+    const payment = makePayment();
+    paymentModel.findById.mockReturnValue(mockQuery(payment));
+    customerModel.findOne.mockReturnValue(mockQuery(customer));
+    await service.cancelPayment(paymentId, actor);
+    expect(customerModel.findOne).toHaveBeenCalledWith({ _id: payment.customerId });
+    expect(customer.balance).toBe(7000);
+    expect(customer.isDeleted).toBe(true);
+    expect(customer.isActive).toBe(false);
+    expect(customer.save).toHaveBeenCalledWith({ session });
+    expect(payment.save).toHaveBeenCalledWith({ session });
+    expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'payment_cancelled' }), session);
+  });
+
+  it('batches unique customer names, returns null for missing accounts, and skips an empty page', async () => {
+    const rows = [makePayment(), makePayment(), makePayment({ customerId: null })];
+    paymentModel.find.mockReturnValue({
+      sort: () => ({ skip: () => ({ limit: () => ({ exec: () => Promise.resolve(rows) }) }) }),
+    });
+    paymentModel.countDocuments.mockReturnValue(mockQuery(3));
+    paymentModel.aggregate.mockResolvedValue([]);
+    const lean = jest.fn().mockReturnValue(mockQuery([{ _id: customerId, name: 'Inactive customer' }]));
+    const select = jest.fn().mockReturnValue({ lean });
+    customerModel.find.mockReturnValue({ select });
+    expect((await service.findAll({})).items.map((row) => row.customerName)).toEqual([
+      'Inactive customer',
+      'Inactive customer',
+      null,
+    ]);
+    expect(customerModel.find).toHaveBeenCalledWith({ _id: { $in: [expect.objectContaining({})] }, isDeleted: false });
+    expect(select).toHaveBeenCalledWith('_id name');
+    expect(lean).toHaveBeenCalledTimes(1);
+    customerModel.find.mockReturnValue({ select: () => ({ lean: () => mockQuery([]) }) });
+    expect((await service.findAll({})).items.map((row) => row.customerName)).toEqual([null, null, null]);
+    customerModel.find.mockClear();
+    paymentModel.find.mockReturnValue({
+      sort: () => ({ skip: () => ({ limit: () => ({ exec: () => Promise.resolve([]) }) }) }),
+    });
+    await service.findAll({});
+    expect(customerModel.find).not.toHaveBeenCalled();
   });
 });

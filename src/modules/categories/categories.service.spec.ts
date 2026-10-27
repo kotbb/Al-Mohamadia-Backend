@@ -1,3 +1,4 @@
+import { Item } from '../items/schemas/item.schema';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
@@ -14,6 +15,7 @@ describe('CategoriesService', () => {
     create: jest.Mock;
     find: jest.Mock;
   };
+  const itemModel = { aggregate: jest.fn() };
   let auditService: { log: jest.Mock };
   let connection: {
     startSession: jest.Mock;
@@ -76,6 +78,7 @@ describe('CategoriesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CategoriesService,
+        { provide: getModelToken(Item.name), useValue: itemModel },
         { provide: getModelToken(Category.name), useValue: categoryModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: AuditService, useValue: auditService },
@@ -142,5 +145,22 @@ describe('CategoriesService', () => {
       );
       expect(result.id).toBe(validId);
     });
+  });
+  it('only includes item counts when requested, with zero for empty categories', async () => {
+    itemModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([{ _id: validId, itemCount: 3 }]) });
+    const rows = await service.findAll(true);
+    expect(rows[0]).toHaveProperty('itemCount', 3);
+    expect(itemModel.aggregate).toHaveBeenCalledWith([
+      { $match: { isDeleted: false, categoryId: { $in: [mockCategory._id] } } },
+      { $group: { _id: '$categoryId', itemCount: { $sum: 1 } } },
+    ]);
+    itemModel.aggregate.mockReturnValue({ exec: () => Promise.resolve([]) });
+    expect((await service.findAll(true))[0]).toHaveProperty('itemCount', 0);
+    itemModel.aggregate.mockClear();
+    expect((await service.findAll())[0]).not.toHaveProperty('itemCount');
+    expect(itemModel.aggregate).not.toHaveBeenCalled();
+    categoryModel.find.mockReturnValue({ sort: () => ({ exec: () => Promise.resolve([]) }) });
+    expect(await service.findAll(true)).toEqual([]);
+    expect(itemModel.aggregate).not.toHaveBeenCalled();
   });
 });
