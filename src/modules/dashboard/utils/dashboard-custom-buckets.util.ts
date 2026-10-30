@@ -7,12 +7,15 @@ import {
 
 export function dashboardCustomBuckets(fromDate: string, toDate: string): CairoPeriodBucket[] {
   const range = cairoCustomRange(fromDate, toDate);
-  const dayCount = Math.ceil((range.to.getTime() - range.from.getTime()) / 86_400_000);
+  const start = parseIsoDateParts(fromDate);
+  const end = parseIsoDateParts(toDate);
+
+  const dayCount =
+    (Date.UTC(end.year, end.month - 1, end.day) - Date.UTC(start.year, start.month - 1, start.day)) / 86_400_000 + 1;
   if (dayCount > 3660) throw new Error('Custom dashboard ranges cannot exceed ten years');
 
   const buckets: CairoPeriodBucket[] = [];
   if (dayCount <= 62) {
-    const start = parseIsoDateParts(fromDate);
     let cursor = new Date(Date.UTC(start.year, start.month - 1, start.day));
     while (true) {
       const year = cursor.getUTCFullYear();
@@ -29,7 +32,6 @@ export function dashboardCustomBuckets(fromDate: string, toDate: string): CairoP
       });
     }
   } else {
-    const start = parseIsoDateParts(fromDate);
     let year = start.year;
     let month = start.month;
     while (true) {

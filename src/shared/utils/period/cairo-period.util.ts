@@ -46,8 +46,7 @@ export function parseIsoDateParts(isoDate: string): { year: number; month: numbe
 }
 
 /**
- * Instant at local Cairo midnight for the given calendar date.
- * Uses the offset that applies at noon UTC that day to handle DST safely enough for Egypt.
+ * First instant of the Cairo calendar day, including skipped/repeated midnight.
  */
 export function cairoMidnightUtc(year: number, month: number, day: number): Date {
   const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
@@ -66,7 +65,21 @@ export function cairoMidnightUtc(year: number, month: number, day: number): Date
     offsetMinutes = sign * (hours * 60 + mins);
   }
 
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60_000);
+  const midnight = Date.UTC(year, month - 1, day);
+  const target = new Date(midnight).toISOString().slice(0, 10);
+  const candidate = midnight - offsetMinutes * 60_000;
+  if (formatCairoDate(new Date(candidate)) === target && formatCairoDate(new Date(candidate - 1)) < target)
+    return new Date(candidate);
+  // On a transition day, noon's offset can differ from the offset at the
+  // start of the day. Find its first instant instead of assuming 00:00 exists.
+  let low = midnight - 36 * 3_600_000;
+  let high = midnight + 36 * 3_600_000;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (formatCairoDate(new Date(middle)) < target) low = middle + 1;
+    else high = middle;
+  }
+  return new Date(low);
 }
 
 function addCalendarDays(

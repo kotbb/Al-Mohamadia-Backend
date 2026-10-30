@@ -9,6 +9,27 @@ import {
 } from './cairo-period.util';
 
 describe('cairo-period.util', () => {
+  it.each([
+    ['2026-10-29', '2026-10-28T21:00:00.000Z', '2026-10-29T22:00:00.000Z', 25],
+    ['2026-10-30', '2026-10-29T22:00:00.000Z', '2026-10-30T22:00:00.000Z', 24],
+    ['2026-04-24', '2026-04-23T22:00:00.000Z', '2026-04-24T21:00:00.000Z', 23],
+  ])('uses exact Cairo calendar boundaries for %s', (date, from, to, hours) => {
+    const range = cairoPeriodRange(SalesInvoicePeriod.DAY, date);
+    expect(range.from.toISOString()).toBe(from);
+    expect(range.to.toISOString()).toBe(to);
+    expect(range.to.getTime() - range.from.getTime()).toBe(Number(hours) * 3_600_000);
+  });
+
+  it('includes both occurrences of 23:30 in the winter transition day', () => {
+    const range = cairoPeriodRange(SalesInvoicePeriod.DAY, '2026-10-29');
+    for (const instant of ['2026-10-29T20:30:00Z', '2026-10-29T21:30:00Z']) {
+      const date = new Date(instant);
+      expect(formatCairoDate(date)).toBe('2026-10-29');
+      expect(date.getTime()).toBeGreaterThanOrEqual(range.from.getTime());
+      expect(date.getTime()).toBeLessThan(range.to.getTime());
+    }
+  });
+
   it('uses inclusive Cairo custom dates and rejects incomplete or reversed ranges', () => {
     const range = cairoCustomRange('2026-10-01', '2026-10-31');
     expect(formatCairoDate(range.from)).toBe('2026-10-01');

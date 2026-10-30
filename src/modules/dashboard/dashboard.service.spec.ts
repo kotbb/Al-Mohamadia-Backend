@@ -156,6 +156,15 @@ describe('DashboardService', () => {
   });
 
   describe('bucket counts', () => {
+    it('returns 62 daily buckets across the winter clock change', async () => {
+      stubEmptyAggregates();
+      const result = await service.getDashboard({ from: '2026-08-29', to: '2026-10-29' });
+      expect(result.salesSeries).toHaveLength(62);
+      expect(result.salesSeries[0].bucketStart).toBe('2026-08-29');
+      expect(result.salesSeries[61].bucketStart).toBe('2026-10-29');
+      expect(result.period.to).toBe('2026-10-29T22:00:00.000Z');
+    });
+
     it('returns 1 bucket for day', async () => {
       stubEmptyAggregates();
       const result = await service.getDashboard({
